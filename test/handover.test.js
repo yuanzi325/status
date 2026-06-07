@@ -11,6 +11,7 @@ const {
   generateHandoverPreview,
   saveHandoverPreview,
   buildHandoverPrompt,
+  extractProviderUsage,
   DEFAULT_MAX_TURNS,
   DEFAULT_MAX_INPUT_CHARS,
   DEFAULT_MAX_MSG_CHARS,
@@ -148,6 +149,123 @@ test('zhipu provider without key returns a clear error', async () => {
   assert.match(out.error, /missing ZHIPU_API_KEY/);
 });
 
+/* ---- zhipu provider token usage (fetch mocked, no real API call) ---- */
+
+test('extractProviderUsage reads usage and tolerates absence', () => {
+  assert.deepEqual(
+    extractProviderUsage({ usage: { prompt_tokens: 19800, completion_tokens: 1600, total_tokens: 21400 } }),
+    { prompt_tokens: 19800, completion_tokens: 1600, total_tokens: 21400 }
+  );
+  // missing fields default to 0
+  assert.deepEqual(extractProviderUsage({ usage: { total_tokens: 5 } }), {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 5,
+  });
+  // absent usage -> null, no throw
+  assert.equal(extractProviderUsage({}), null);
+  assert.equal(extractProviderUsage(null), null);
+});
+
+function withMockedFetch(impl, fn) {
+  const real = global.fetch;
+  global.fetch = impl;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      global.fetch = real;
+    });
+}
+
+test('zhipu success surfaces provider_usage when the model returns usage', async () => {
+  process.env.ZHIPU_API_KEY = 'test-key';
+  try {
+    await withMockedFetch(
+      async () => ({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: '# 给下一个窗口的交接\n内容' } }],
+          usage: { prompt_tokens: 19800, completion_tokens: 1600, total_tokens: 21400 },
+        }),
+      }),
+      async () => {
+        const out = await generateHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'zhipu' });
+        assert.equal(out.ok, true);
+        assert.equal(out.provider, 'zhipu');
+        assert.deepEqual(out.provider_usage, {
+          prompt_tokens: 19800,
+          completion_tokens: 1600,
+          total_tokens: 21400,
+        });
+        // the API key must never leak into the payload
+        assert.equal(JSON.stringify(out).includes('test-key'), false);
+      }
+    );
+  } finally {
+    delete process.env.ZHIPU_API_KEY;
+  }
+});
+
+test('zhipu success with no usage yields provider_usage=null, no error', async () => {
+  process.env.ZHIPU_API_KEY = 'test-key';
+  try {
+    await withMockedFetch(
+      async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '内容' } }] }),
+      }),
+      async () => {
+        const out = await generateHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'zhipu' });
+        assert.equal(out.ok, true);
+        assert.equal(out.provider_usage, null);
+      }
+    );
+  } finally {
+    delete process.env.ZHIPU_API_KEY;
+  }
+});
+
+test('zhipu save records provider_usage in latest.json and latest.md', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.ZHIPU_API_KEY = 'test-key';
+  process.env.HANDOVER_OUT_DIR = outDir;
+  try {
+    await withMockedFetch(
+      async () => ({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: '# 给下一个窗口的交接\n内容' } }],
+          usage: { prompt_tokens: 19800, completion_tokens: 1600, total_tokens: 21400 },
+        }),
+      }),
+      async () => {
+        const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'zhipu' });
+        assert.equal(out.ok, true);
+        assert.deepEqual(out.provider_usage, {
+          prompt_tokens: 19800,
+          completion_tokens: 1600,
+          total_tokens: 21400,
+        });
+        const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
+        assert.deepEqual(json.provider_usage, {
+          prompt_tokens: 19800,
+          completion_tokens: 1600,
+          total_tokens: 21400,
+        });
+        const md = fs.readFileSync(path.join(outDir, 'latest.md'), 'utf8');
+        assert.match(md, /provider\.prompt_tokens: 19800/);
+        assert.match(md, /provider\.completion_tokens: 1600/);
+        assert.match(md, /provider\.total_tokens: 21400/);
+        assert.equal((md + JSON.stringify(json)).includes('test-key'), false);
+      }
+    );
+  } finally {
+    delete process.env.ZHIPU_API_KEY;
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test('save without HANDOVER_OUT_DIR returns a clear error', async () => {
   delete process.env.HANDOVER_OUT_DIR;
   const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });
@@ -168,11 +286,15 @@ test('mock save writes latest.md and latest.json with consumed=false', async () 
     assert.match(md, /# Session Handover/);
     assert.match(md, /provider: mock/);
     assert.match(md, /selected_turns: 4/);
+    // mock has no provider usage -> markdown notes it as unavailable
+    assert.match(md, /provider\.tokens: unavailable/);
 
     const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
     assert.equal(json.ok, true);
     assert.equal(json.consumed, false);
     assert.equal(json.provider, 'mock');
+    assert.equal(json.provider_usage, null);
+    assert.equal(out.provider_usage, null);
     assert.equal(json.source.selected_turns, 4);
     assert.ok(typeof json.handover === 'string' && json.handover.length > 0);
 

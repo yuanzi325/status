@@ -131,6 +131,15 @@ It reuses the same bearer auth as the monitor (`401` without a valid token when
   a low temperature, a 30s timeout, and **no retries**; the API key is never
   logged or returned.
 
+Both `/preview` and `/save` carry a `provider_usage` field. For **zhipu** it
+reflects the model's real token usage
+(`{ prompt_tokens, completion_tokens, total_tokens }`) when the API returns it,
+or `null` if it doesn't. For **mock** it is always `null`. The action sheet
+folds this into the existing small meta line (e.g.
+`zhipu · glm-4.5-air · 40 turns / 18000 chars` with a lighter second line
+`21.4k tokens · prompt 19.8k / completion 1.6k`); there is no separate token
+widget.
+
 ### Sample response (mock)
 
 ```json
@@ -138,7 +147,8 @@ It reuses the same bearer auth as the monitor (`401` without a valid token when
   "ok": true,
   "provider": "mock",
   "model": "mock",
-  "handover": "# Handover Preview (mock)\n\n## summary\n...",
+  "handover": "# 给下一个窗口的交接\n\n## 现在正在发生什么\n...",
+  "provider_usage": null,
   "source": {
     "jsonl_path": ".../conversation.jsonl",
     "workspace": null,
@@ -149,6 +159,9 @@ It reuses the same bearer auth as the monitor (`401` without a valid token when
   "updated_at": "2026-06-07T00:00:00.000Z"
 }
 ```
+
+For **zhipu** with usage, `provider_usage` is e.g.
+`{ "prompt_tokens": 19800, "completion_tokens": 1600, "total_tokens": 21400 }`.
 
 ### Environment
 
@@ -179,11 +192,12 @@ never writes into the Claude jsonl directory.
 - Files are written **atomically** (`.tmp` then `rename`) so a reader never
   sees a half-written file:
   - `latest.md` — a header (generated_at, provider, model, selected_turns,
-    total_chars, monitor status/window_load/context_limit) followed by the
-    handover Markdown body.
-  - `latest.json` — `{ ok, provider, model, source, monitor, updated_at,
-    handover, consumed: false }`. The `consumed` flag is for a future hook to
-    flip after reading.
+    total_chars, provider token usage or `provider.tokens: unavailable`, and
+    monitor status/window_load/context_limit) followed by the handover
+    Markdown body.
+  - `latest.json` — `{ ok, provider, model, source, monitor, provider_usage,
+    updated_at, handover, consumed: false }`. The `consumed` flag is for a
+    future hook to flip after reading.
 - Writes stay inside the resolved `HANDOVER_OUT_DIR`; the filenames are fixed.
 - Reuses the same bearer auth as the rest of the API.
 

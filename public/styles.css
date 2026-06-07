@@ -339,8 +339,14 @@ body {
 .sheet-meta {
   margin-top: 6px;
   font-size: 10.5px;
+  line-height: 1.7;
   letter-spacing: 0.06em;
   color: var(--ink-40);
+}
+
+/* token usage folded into the meta — one shade lighter, never red */
+.meta-tokens {
+  color: rgba(10, 10, 10, 0.32);
 }
 
 .sheet-close {

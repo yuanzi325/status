@@ -158,8 +158,30 @@ function renderHandover() {
   renderSheet();
 }
 
-function metaLine(m) {
-  return `${m.provider} · ${m.model} · ${m.source.selected_turns} turns / ${m.source.total_chars} chars`;
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])
+  );
+}
+
+function tokensStr(n) {
+  const c = compact(n);
+  return c.num + c.unit;
+}
+
+// Base line + optional lighter token line, folded into the existing meta.
+function metaHtml(m) {
+  const base = escapeHtml(
+    `${m.provider} · ${m.model} · ${m.source.selected_turns} turns / ${m.source.total_chars} chars`
+  );
+  const pu = m.provider_usage;
+  if (pu) {
+    const line = `${tokensStr(pu.total_tokens)} tokens · prompt ${tokensStr(pu.prompt_tokens)} / completion ${tokensStr(pu.completion_tokens)}`;
+    return `${base}<br><span class="meta-tokens">${escapeHtml(line)}</span>`;
+  }
+  // mock: no token line; zhipu without usage: a faint "unavailable"
+  if (m.provider === 'mock') return base;
+  return `${base}<br><span class="meta-tokens">tokens unavailable</span>`;
 }
 
 /* ---- handover: frosted action sheet ---- */
@@ -177,7 +199,11 @@ function renderSheet() {
   saveBtn.textContent = saveState.loading ? 'SAVING…' : 'SAVE LATEST';
 
   const m = handoverState.meta || saveState.saved;
-  meta.textContent = m ? metaLine(m) : 'no preview yet';
+  if (m) {
+    meta.innerHTML = metaHtml(m);
+  } else {
+    meta.textContent = 'no preview yet';
+  }
 
   if (saveState.error) {
     saved.hidden = false;
@@ -191,8 +217,8 @@ function renderSheet() {
     const js = s.saved.json_path.split('/').pop();
     saved.innerHTML =
       `<span class="saved-tag">SAVED</span><br>` +
-      `<span class="saved-detail">${md} / ${js}</span><br>` +
-      `<span class="saved-detail">${metaLine(s)}</span>`;
+      `<span class="saved-detail">${escapeHtml(md)} / ${escapeHtml(js)}</span><br>` +
+      `<span class="saved-detail">${metaHtml(s)}</span>`;
   } else {
     saved.hidden = true;
     saved.textContent = '';

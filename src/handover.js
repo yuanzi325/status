@@ -202,6 +202,25 @@ function buildMockHandover(source, monitor) {
 }
 
 /**
+ * Safely pull token usage out of a chat-completions response. Returns
+ * { prompt_tokens, completion_tokens, total_tokens } or null if absent.
+ * Missing individual fields default to 0; never throws.
+ */
+function extractProviderUsage(data) {
+  const u = data && data.usage;
+  if (!u || typeof u !== 'object') return null;
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+  };
+  return {
+    prompt_tokens: num(u.prompt_tokens),
+    completion_tokens: num(u.completion_tokens),
+    total_tokens: num(u.total_tokens),
+  };
+}
+
+/**
  * Call Zhipu BigModel chat completions. No retries, no key logging.
  */
 async function callZhipu({ prompt, apiKey, model }) {
@@ -249,7 +268,11 @@ async function callZhipu({ prompt, apiKey, model }) {
     if (!content || !content.trim()) {
       return { ok: false, error: 'zhipu returned empty content' };
     }
-    return { ok: true, content: content.trim() };
+    return {
+      ok: true,
+      content: content.trim(),
+      provider_usage: extractProviderUsage(data),
+    };
   } catch (err) {
     if (err && err.name === 'AbortError') {
       return { ok: false, error: 'zhipu request timed out' };
@@ -300,6 +323,7 @@ async function generateHandoverPreview(options = {}) {
       ...base,
       model: 'mock',
       handover: buildMockHandover(turnsResult.source, mon.ok ? monitor : null),
+      provider_usage: null,
     };
   }
 
@@ -317,7 +341,12 @@ async function generateHandoverPreview(options = {}) {
     if (!out.ok) {
       return { ok: false, provider, model, error: out.error };
     }
-    return { ...base, model, handover: out.content };
+    return {
+      ...base,
+      model,
+      handover: out.content,
+      provider_usage: out.provider_usage || null,
+    };
   }
 
   return { ok: false, provider, error: `unknown provider: ${provider}` };
@@ -345,6 +374,14 @@ function atomicWrite(filePath, content) {
 function buildMarkdownDoc(preview) {
   const m = preview.monitor || {};
   const s = preview.source || {};
+  const pu = preview.provider_usage;
+  const tokenLines = pu
+    ? [
+        `- provider.prompt_tokens: ${pu.prompt_tokens}`,
+        `- provider.completion_tokens: ${pu.completion_tokens}`,
+        `- provider.total_tokens: ${pu.total_tokens}`,
+      ]
+    : ['- provider.tokens: unavailable'];
   const header = [
     '# Session Handover',
     '',
@@ -353,6 +390,7 @@ function buildMarkdownDoc(preview) {
     `- model: ${preview.model}`,
     `- selected_turns: ${s.selected_turns}`,
     `- total_chars: ${s.total_chars}`,
+    ...tokenLines,
     `- monitor.status: ${m.status}`,
     `- monitor.window_load: ${m.window_load}`,
     `- monitor.context_limit: ${m.context_limit}`,
@@ -402,6 +440,7 @@ async function saveHandoverPreview(options = {}) {
     model: preview.model,
     source: preview.source,
     monitor: preview.monitor,
+    provider_usage: preview.provider_usage || null,
     updated_at: preview.updated_at,
     handover: preview.handover,
     consumed: false,
@@ -425,6 +464,7 @@ async function saveHandoverPreview(options = {}) {
     saved: { markdown_path: markdownPath, json_path: jsonPath },
     source: preview.source,
     monitor: preview.monitor,
+    provider_usage: preview.provider_usage || null,
     updated_at: preview.updated_at,
   };
 }
@@ -434,6 +474,7 @@ module.exports = {
   DEFAULT_MAX_INPUT_CHARS,
   DEFAULT_MAX_MSG_CHARS,
   extractMessageText,
+  extractProviderUsage,
   getRecentConversationTurns,
   buildHandoverPrompt,
   buildMockHandover,
