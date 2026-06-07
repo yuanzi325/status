@@ -25,6 +25,43 @@ function intFromEnv(name, fallback) {
 }
 
 /**
+ * Map a raw error to a clear, non-sensitive message for a given failure stage.
+ * Never echoes API keys, env values, jsonl text, or absolute paths.
+ */
+function humanizeError(stage, raw) {
+  switch (stage) {
+    case 'auth':
+      return 'Unauthorized. Provide a valid bearer token.';
+    case 'missing_out_dir':
+      return 'HANDOVER_OUT_DIR is not configured';
+    case 'write_handover':
+      return 'Cannot write handover file. Check HANDOVER_OUT_DIR volume permissions.';
+    case 'invalid_payload':
+      return 'Handover payload is missing a text body.';
+    default:
+      break;
+  }
+  const r = String(raw || '');
+  if (/missing ZHIPU_API_KEY/.test(r)) return 'missing ZHIPU_API_KEY';
+  if (/timed out/.test(r)) return 'Zhipu request timed out while generating handover';
+  if (/no readable conversation turns/.test(r))
+    return 'No readable user/assistant turns found in the selected session.';
+  if (/escapes projects root/.test(r))
+    return 'Session log path is outside SESSION_MONITOR_PROJECTS.';
+  if (/no session .*jsonl found/.test(r))
+    return 'No session log found under SESSION_MONITOR_PROJECTS.';
+  if (/jsonl not found/.test(r)) return 'Selected session log was not found.';
+  if (/failed to read jsonl/.test(r)) return 'Failed to read the session log.';
+  if (stage === 'zhipu') return 'Zhipu request failed while generating handover.';
+  return r || 'Unknown error';
+}
+
+/** Build a stage-tagged failure object with a clean message. */
+function fail(stage, raw, extra = {}) {
+  return { ok: false, stage, error: humanizeError(stage, raw), ...extra };
+}
+
+/**
  * Pull only plain text out of a message's content, dropping every non-text
  * block (tool_use, tool_result, thinking, image, document, etc.).
  */
@@ -294,10 +331,10 @@ async function generateHandoverPreview(options = {}) {
 
   const turnsResult = getRecentConversationTurns(options);
   if (!turnsResult.ok) {
-    return { ok: false, provider, error: turnsResult.error };
+    return fail('read_jsonl', turnsResult.error, { provider });
   }
   if (turnsResult.turns.length === 0) {
-    return { ok: false, provider, error: 'no readable conversation turns found' };
+    return fail('read_jsonl', 'no readable conversation turns found', { provider });
   }
 
   // Best-effort monitor context (handover does not require a usage record).
@@ -330,7 +367,7 @@ async function generateHandoverPreview(options = {}) {
   if (provider === 'zhipu') {
     const apiKey = process.env.ZHIPU_API_KEY;
     if (!apiKey) {
-      return { ok: false, provider, error: 'missing ZHIPU_API_KEY' };
+      return fail('zhipu', 'missing ZHIPU_API_KEY', { provider });
     }
     const model = process.env.ZHIPU_MODEL || 'glm-4.5-air';
     const prompt = buildHandoverPrompt(
@@ -339,7 +376,7 @@ async function generateHandoverPreview(options = {}) {
     );
     const out = await callZhipu({ prompt, apiKey, model });
     if (!out.ok) {
-      return { ok: false, provider, model, error: out.error };
+      return fail('zhipu', out.error, { provider, model });
     }
     return {
       ...base,
@@ -349,7 +386,7 @@ async function generateHandoverPreview(options = {}) {
     };
   }
 
-  return { ok: false, provider, error: `unknown provider: ${provider}` };
+  return fail('unknown', `unknown provider: ${provider}`, { provider });
 }
 
 /**
@@ -458,6 +495,17 @@ function coercePreviewPayload(p) {
  */
 async function saveHandoverPreview(options = {}) {
   const payload = options.payload;
+
+  // A payload that declares a handover but with a non-string body is malformed.
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'handover' in payload &&
+    typeof payload.handover !== 'string'
+  ) {
+    return fail('invalid_payload', 'handover payload missing text body');
+  }
+
   const hasPayload =
     payload &&
     typeof payload === 'object' &&
@@ -474,18 +522,14 @@ async function saveHandoverPreview(options = {}) {
 
   const outDir = process.env.HANDOVER_OUT_DIR;
   if (!outDir) {
-    return { ok: false, provider: preview.provider, error: 'missing HANDOVER_OUT_DIR' };
+    return fail('missing_out_dir', 'missing HANDOVER_OUT_DIR', { provider: preview.provider });
   }
 
   const resolvedDir = path.resolve(outDir);
   try {
     fs.mkdirSync(resolvedDir, { recursive: true });
   } catch (err) {
-    return {
-      ok: false,
-      provider: preview.provider,
-      error: `cannot create HANDOVER_OUT_DIR: ${err.message}`,
-    };
+    return fail('write_handover', err.message, { provider: preview.provider });
   }
 
   // Validate against the real directory and confirm both targets stay inside.
@@ -493,7 +537,7 @@ async function saveHandoverPreview(options = {}) {
   const markdownPath = path.join(realDir, 'latest.md');
   const jsonPath = path.join(realDir, 'latest.json');
   if (!isInside(realDir, markdownPath) || !isInside(realDir, jsonPath)) {
-    return { ok: false, provider: preview.provider, error: 'output path escapes HANDOVER_OUT_DIR' };
+    return fail('write_handover', 'output path escapes HANDOVER_OUT_DIR', { provider: preview.provider });
   }
 
   const record = {
@@ -512,11 +556,7 @@ async function saveHandoverPreview(options = {}) {
     atomicWrite(markdownPath, buildMarkdownDoc(preview));
     atomicWrite(jsonPath, JSON.stringify(record, null, 2) + '\n');
   } catch (err) {
-    return {
-      ok: false,
-      provider: preview.provider,
-      error: `failed to write handover: ${err.message}`,
-    };
+    return fail('write_handover', err.message, { provider: preview.provider });
   }
 
   return {
@@ -537,6 +577,7 @@ module.exports = {
   DEFAULT_MAX_MSG_CHARS,
   extractMessageText,
   extractProviderUsage,
+  humanizeError,
   getRecentConversationTurns,
   buildHandoverPrompt,
   buildMockHandover,

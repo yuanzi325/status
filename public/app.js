@@ -3,8 +3,8 @@
 const REFRESH_MS = 15000;
 let current = null;
 let activeBlock = 'summary';
-let handoverState = { loading: false, error: null, text: null, meta: null };
-let saveState = { loading: false, error: null, saved: null };
+let handoverState = { loading: false, error: null, stage: null, text: null, meta: null };
+let saveState = { loading: false, error: null, stage: null, saved: null };
 
 /* ---- formatting helpers ---- */
 function compact(n) {
@@ -169,6 +169,12 @@ function tokensStr(n) {
   return c.num + c.unit;
 }
 
+// "stage · message", never printing undefined/null
+function errorLine(stage, message) {
+  const msg = message ? String(message) : 'unknown error';
+  return stage ? `${stage} · ${msg}` : msg;
+}
+
 // Base line + optional lighter token line, folded into the existing meta.
 function metaHtml(m) {
   const base = escapeHtml(
@@ -189,6 +195,7 @@ function renderSheet() {
   const btn = document.getElementById('handoverBtn');
   const saveBtn = document.getElementById('handoverSaveBtn');
   const meta = document.getElementById('handoverMeta');
+  const errEl = document.getElementById('handoverError');
   const saved = document.getElementById('handoverSaved');
   const out = document.getElementById('handoverOut');
 
@@ -205,14 +212,22 @@ function renderSheet() {
     meta.textContent = 'no preview yet';
   }
 
+  // single hideable error line: stage · message (most recent action wins)
   if (saveState.error) {
-    saved.hidden = false;
-    saved.classList.add('is-error');
-    saved.textContent = `save error · ${saveState.error}`;
-  } else if (saveState.saved) {
+    errEl.hidden = false;
+    errEl.textContent = errorLine(saveState.stage, saveState.error);
+  } else if (handoverState.error) {
+    errEl.hidden = false;
+    errEl.textContent = errorLine(handoverState.stage, handoverState.error);
+  } else {
+    errEl.hidden = true;
+    errEl.textContent = '';
+  }
+
+  // SAVED block — success only
+  if (saveState.saved) {
     const s = saveState.saved;
     saved.hidden = false;
-    saved.classList.remove('is-error');
     const md = s.saved.markdown_path.split('/').pop();
     const js = s.saved.json_path.split('/').pop();
     saved.innerHTML =
@@ -224,13 +239,9 @@ function renderSheet() {
     saved.textContent = '';
   }
 
-  if (handoverState.error) {
+  // preview body — success only
+  if (handoverState.text) {
     out.hidden = false;
-    out.classList.add('is-error');
-    out.textContent = `error · ${handoverState.error}`;
-  } else if (handoverState.text) {
-    out.hidden = false;
-    out.classList.remove('is-error');
     out.textContent = handoverState.text;
   } else {
     out.hidden = true;
@@ -251,7 +262,8 @@ function closeSheet() {
 
 async function runHandover() {
   if (handoverState.loading) return;
-  handoverState = { loading: true, error: null, text: null, meta: null };
+  handoverState = { loading: true, error: null, stage: null, text: null, meta: null };
+  saveState = { loading: false, error: null, stage: null, saved: null }; // a new preview makes prior save stale
   renderSheet();
   try {
     const res = await fetch('/api/handover/preview', {
@@ -261,24 +273,26 @@ async function runHandover() {
     });
     const data = await res.json();
     if (data && data.ok) {
-      handoverState = { loading: false, error: null, text: data.handover, meta: data };
+      handoverState = { loading: false, error: null, stage: null, text: data.handover, meta: data };
     } else {
       handoverState = {
         loading: false,
         error: (data && data.error) || 'failed',
+        stage: (data && data.stage) || null,
         text: null,
         meta: null,
       };
     }
   } catch (_err) {
-    handoverState = { loading: false, error: 'request failed', text: null, meta: null };
+    handoverState = { loading: false, error: 'request failed', stage: 'unknown', text: null, meta: null };
   }
   renderSheet();
 }
 
 async function runHandoverSave() {
   if (saveState.loading || handoverState.loading) return;
-  saveState = { loading: true, error: null, saved: null };
+  saveState = { loading: true, error: null, stage: null, saved: null };
+  handoverState = { ...handoverState, error: null, stage: null }; // don't let a stale preview error mask the save result
   renderSheet();
   try {
     // Reuse the preview we already paid tokens for, if there is one — saving
@@ -291,12 +305,17 @@ async function runHandoverSave() {
     });
     const data = await res.json();
     if (data && data.ok) {
-      saveState = { loading: false, error: null, saved: data };
+      saveState = { loading: false, error: null, stage: null, saved: data };
     } else {
-      saveState = { loading: false, error: (data && data.error) || 'failed', saved: null };
+      saveState = {
+        loading: false,
+        error: (data && data.error) || 'failed',
+        stage: (data && data.stage) || null,
+        saved: null,
+      };
     }
   } catch (_err) {
-    saveState = { loading: false, error: 'request failed', saved: null };
+    saveState = { loading: false, error: 'request failed', stage: 'unknown', saved: null };
   }
   renderSheet();
 }

@@ -12,6 +12,7 @@ const {
   saveHandoverPreview,
   buildHandoverPrompt,
   extractProviderUsage,
+  humanizeError,
   DEFAULT_MAX_TURNS,
   DEFAULT_MAX_INPUT_CHARS,
   DEFAULT_MAX_MSG_CHARS,
@@ -146,6 +147,7 @@ test('zhipu provider without key returns a clear error', async () => {
     provider: 'zhipu',
   });
   assert.equal(out.ok, false);
+  assert.equal(out.stage, 'zhipu');
   assert.match(out.error, /missing ZHIPU_API_KEY/);
 });
 
@@ -362,11 +364,78 @@ test('POST /api/handover/save accepts a payload and saves it verbatim', async ()
   }
 });
 
-test('save without HANDOVER_OUT_DIR returns a clear error', async () => {
+test('save without HANDOVER_OUT_DIR returns stage=missing_out_dir', async () => {
   delete process.env.HANDOVER_OUT_DIR;
   const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });
   assert.equal(out.ok, false);
-  assert.match(out.error, /missing HANDOVER_OUT_DIR/);
+  assert.equal(out.stage, 'missing_out_dir');
+  assert.match(out.error, /HANDOVER_OUT_DIR is not configured/);
+});
+
+test('humanizeError never leaks paths/keys and stays clear', () => {
+  assert.equal(humanizeError('missing_out_dir', 'x'), 'HANDOVER_OUT_DIR is not configured');
+  assert.equal(
+    humanizeError('write_handover', "EACCES: permission denied, open '/data/secret/latest.md'"),
+    'Cannot write handover file. Check HANDOVER_OUT_DIR volume permissions.'
+  );
+  assert.equal(humanizeError('auth', null), 'Unauthorized. Provide a valid bearer token.');
+  assert.equal(humanizeError('invalid_payload', undefined), 'Handover payload is missing a text body.');
+  assert.match(humanizeError('zhipu', 'zhipu request timed out'), /timed out/);
+  assert.match(humanizeError('read_jsonl', 'jsonl path escapes projects root'), /SESSION_MONITOR_PROJECTS/);
+  // a write_handover message must not echo the absolute path it came from
+  assert.equal(
+    humanizeError('write_handover', "ENOSPC '/data/secret/x'").includes('/data/secret'),
+    false
+  );
+});
+
+test('write failure surfaces stage=write_handover (out dir is a file)', async () => {
+  // point HANDOVER_OUT_DIR at a regular file so mkdir/write fails
+  const tmpFile = path.join(fs.realpathSync(os.tmpdir()), `hof-${Date.now()}.txt`);
+  fs.writeFileSync(tmpFile, 'not a dir');
+  process.env.HANDOVER_OUT_DIR = tmpFile;
+  try {
+    const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });
+    assert.equal(out.ok, false);
+    assert.equal(out.stage, 'write_handover');
+    assert.match(out.error, /Cannot write handover file/);
+    // never leak the absolute path in the message
+    assert.equal(out.error.includes(tmpFile), false);
+  } finally {
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(tmpFile, { force: true });
+  }
+});
+
+test('zhipu timeout surfaces stage=zhipu', async () => {
+  process.env.ZHIPU_API_KEY = 'test-key';
+  const realFetch = global.fetch;
+  global.fetch = async () => {
+    const e = new Error('aborted');
+    e.name = 'AbortError';
+    throw e;
+  };
+  try {
+    const out = await generateHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'zhipu' });
+    assert.equal(out.ok, false);
+    assert.equal(out.stage, 'zhipu');
+    assert.match(out.error, /timed out/);
+  } finally {
+    global.fetch = realFetch;
+    delete process.env.ZHIPU_API_KEY;
+  }
+});
+
+test('malformed payload (non-string handover) returns stage=invalid_payload', async () => {
+  process.env.HANDOVER_OUT_DIR = fs.realpathSync(os.tmpdir());
+  try {
+    const out = await saveHandoverPreview({ payload: { handover: { not: 'a string' } } });
+    assert.equal(out.ok, false);
+    assert.equal(out.stage, 'invalid_payload');
+    assert.match(out.error, /missing a text body/);
+  } finally {
+    delete process.env.HANDOVER_OUT_DIR;
+  }
 });
 
 test('mock save writes latest.md and latest.json with consumed=false', async () => {

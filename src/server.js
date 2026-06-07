@@ -31,7 +31,7 @@ function createApp() {
       return res
         .status(401)
         .set('WWW-Authenticate', 'Bearer')
-        .json({ ok: false, error: 'unauthorized' });
+        .json({ ok: false, stage: 'auth', error: 'unauthorized' });
     }
     const options = {
       workspace: req.query.workspace || undefined,
@@ -55,7 +55,7 @@ function createApp() {
       return res
         .status(401)
         .set('WWW-Authenticate', 'Bearer')
-        .json({ ok: false, error: 'unauthorized' });
+        .json({ ok: false, stage: 'auth', error: 'unauthorized' });
     }
     const body = req.body || {};
     const options = {
@@ -83,7 +83,7 @@ function createApp() {
       return res
         .status(401)
         .set('WWW-Authenticate', 'Bearer')
-        .json({ ok: false, error: 'unauthorized' });
+        .json({ ok: false, stage: 'auth', error: 'unauthorized' });
     }
     const body = req.body || {};
     const options = {

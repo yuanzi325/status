@@ -349,6 +349,16 @@ body {
   color: rgba(10, 10, 10, 0.32);
 }
 
+/* hideable stage · message error line — light grey, not red, up to two lines */
+.handover-error {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+  color: var(--ink-60);
+  word-break: break-word;
+}
+
 .sheet-close {
   appearance: none;
   background: transparent;

@@ -121,6 +121,22 @@ JSON body (all optional):
 It reuses the same bearer auth as the monitor (`401` without a valid token when
 `SESSION_MONITOR_TOKEN` is set).
 
+### Error shape
+
+Both `/preview` and `/save` failures return `{ ok: false, stage, error }` so you
+can see *which step* failed. `stage` is one of `auth`, `read_jsonl`, `zhipu`,
+`missing_out_dir`, `write_handover`, `invalid_payload`, or `unknown`; `error` is
+a short, human-readable message that never includes API keys, env values, jsonl
+text, or absolute paths. The action sheet shows it as a faint grey line
+`stage · message` below the meta. Examples:
+
+```text
+missing_out_dir · HANDOVER_OUT_DIR is not configured
+write_handover · Cannot write handover file. Check HANDOVER_OUT_DIR volume permissions.
+zhipu · Zhipu request timed out while generating handover
+read_jsonl · No readable user/assistant turns found in the selected session.
+```
+
 ### Providers
 
 - **mock** (default) — no API key required; returns a deterministic draft that
