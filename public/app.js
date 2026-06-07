@@ -152,23 +152,32 @@ function renderPanel(d) {
   renderHandover();
 }
 
-/* ---- handover preview ---- */
+/* ---- handover: panel entry shows only on the HANDOVER block ---- */
 function renderHandover() {
-  const zone = document.getElementById('handoverZone');
+  document.getElementById('handoverZone').hidden = activeBlock !== 'handover';
+  renderSheet();
+}
+
+function metaLine(m) {
+  return `${m.provider} · ${m.model} · ${m.source.selected_turns} turns / ${m.source.total_chars} chars`;
+}
+
+/* ---- handover: frosted action sheet ---- */
+function renderSheet() {
   const btn = document.getElementById('handoverBtn');
   const saveBtn = document.getElementById('handoverSaveBtn');
   const meta = document.getElementById('handoverMeta');
   const saved = document.getElementById('handoverSaved');
   const out = document.getElementById('handoverOut');
-  if (activeBlock !== 'handover') {
-    zone.hidden = true;
-    return;
-  }
-  zone.hidden = false;
-  btn.disabled = handoverState.loading || saveState.loading;
-  btn.textContent = handoverState.loading ? 'GENERATING…' : 'GENERATE HANDOVER';
-  saveBtn.disabled = handoverState.loading || saveState.loading;
-  saveBtn.textContent = saveState.loading ? 'SAVING…' : 'SAVE HANDOVER';
+
+  const busy = handoverState.loading || saveState.loading;
+  btn.disabled = busy;
+  btn.textContent = handoverState.loading ? 'GENERATING…' : 'GENERATE PREVIEW';
+  saveBtn.disabled = busy;
+  saveBtn.textContent = saveState.loading ? 'SAVING…' : 'SAVE LATEST';
+
+  const m = handoverState.meta || saveState.saved;
+  meta.textContent = m ? metaLine(m) : 'no preview yet';
 
   if (saveState.error) {
     saved.hidden = false;
@@ -183,19 +192,10 @@ function renderHandover() {
     saved.innerHTML =
       `<span class="saved-tag">SAVED</span><br>` +
       `<span class="saved-detail">${md} / ${js}</span><br>` +
-      `<span class="saved-detail">${s.provider} · ${s.model} · ${s.source.selected_turns} turns / ${s.source.total_chars} chars</span>`;
+      `<span class="saved-detail">${metaLine(s)}</span>`;
   } else {
     saved.hidden = true;
     saved.textContent = '';
-  }
-
-  if (handoverState.meta) {
-    const m = handoverState.meta;
-    meta.hidden = false;
-    meta.textContent = `${m.provider} · ${m.model} · ${m.source.selected_turns} turns / ${m.source.total_chars} chars`;
-  } else {
-    meta.hidden = true;
-    meta.textContent = '';
   }
 
   if (handoverState.error) {
@@ -212,10 +212,21 @@ function renderHandover() {
   }
 }
 
+function openSheet() {
+  document.getElementById('sheetBackdrop').hidden = false;
+  document.getElementById('handoverSheet').hidden = false;
+  renderSheet();
+}
+
+function closeSheet() {
+  document.getElementById('sheetBackdrop').hidden = true;
+  document.getElementById('handoverSheet').hidden = true;
+}
+
 async function runHandover() {
   if (handoverState.loading) return;
   handoverState = { loading: true, error: null, text: null, meta: null };
-  renderHandover();
+  renderSheet();
   try {
     const res = await fetch('/api/handover/preview', {
       method: 'POST',
@@ -236,13 +247,13 @@ async function runHandover() {
   } catch (_err) {
     handoverState = { loading: false, error: 'request failed', text: null, meta: null };
   }
-  renderHandover();
+  renderSheet();
 }
 
 async function runHandoverSave() {
   if (saveState.loading || handoverState.loading) return;
   saveState = { loading: true, error: null, saved: null };
-  renderHandover();
+  renderSheet();
   try {
     const res = await fetch('/api/handover/save', {
       method: 'POST',
@@ -258,11 +269,17 @@ async function runHandoverSave() {
   } catch (_err) {
     saveState = { loading: false, error: 'request failed', saved: null };
   }
-  renderHandover();
+  renderSheet();
 }
 
 document.getElementById('handoverBtn').addEventListener('click', runHandover);
 document.getElementById('handoverSaveBtn').addEventListener('click', runHandoverSave);
+document.getElementById('handoverPrepareBtn').addEventListener('click', openSheet);
+document.getElementById('sheetCloseBtn').addEventListener('click', closeSheet);
+document.getElementById('sheetBackdrop').addEventListener('click', closeSheet);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSheet();
+});
 
 function setRows(container, pairs) {
   container.innerHTML = '';
@@ -294,6 +311,7 @@ function renderError(payload) {
     el.classList.remove('is-word');
   });
   document.getElementById('handoverZone').hidden = true;
+  closeSheet();
 }
 
 function render() {
@@ -319,6 +337,7 @@ document.querySelectorAll('.cell').forEach((cell) => {
     document.querySelectorAll('.cell').forEach((c) =>
       c.classList.toggle('is-active', c === cell && activeBlock === block)
     );
+    closeSheet();
     if (current && current.ok) renderPanel(current);
   });
 });

@@ -66,16 +66,30 @@
       <p class="panel-foot" id="panelFoot"></p>
 
       <div class="handover-zone" id="handoverZone" hidden>
-        <div class="handover-actions">
-          <button class="handover-btn" id="handoverBtn" type="button">GENERATE HANDOVER</button>
-          <button class="handover-btn" id="handoverSaveBtn" type="button">SAVE HANDOVER</button>
-        </div>
-        <p class="handover-meta" id="handoverMeta" hidden></p>
-        <p class="handover-saved" id="handoverSaved" hidden></p>
-        <pre class="handover-out" id="handoverOut" hidden></pre>
+        <button class="handover-prepare" id="handoverPrepareBtn" type="button">
+          PREPARE HANDOVER<span class="prepare-arrow">↗</span>
+        </button>
       </div>
     </section>
   </main>
+
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <aside class="sheet" id="handoverSheet" role="dialog" aria-modal="true" aria-label="Handover" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <header class="sheet-head">
+      <div class="sheet-title-wrap">
+        <h2 class="sheet-title">HANDOVER</h2>
+        <p class="sheet-meta" id="handoverMeta">no preview yet</p>
+      </div>
+      <button class="sheet-close" id="sheetCloseBtn" type="button" aria-label="close">×</button>
+    </header>
+    <div class="sheet-actions">
+      <button class="handover-btn" id="handoverBtn" type="button">GENERATE PREVIEW</button>
+      <button class="handover-btn" id="handoverSaveBtn" type="button">SAVE LATEST</button>
+    </div>
+    <p class="handover-saved" id="handoverSaved" hidden></p>
+    <pre class="handover-out" id="handoverOut" hidden></pre>
+  </aside>
 
   <script src="app.js"></script>
 </body>

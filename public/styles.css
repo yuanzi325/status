@@ -15,6 +15,11 @@
   padding: 0;
 }
 
+/* keep the hidden attribute authoritative over display rules below */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   background: var(--paper);
@@ -244,17 +249,123 @@ body {
 
 .panel.is-error .panel-status { font-size: 20px; }
 
-/* ---- handover preview ---- */
+/* ---- handover: light entry in the panel ---- */
 .handover-zone {
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--ink-25);
 }
 
-.handover-actions {
+.handover-prepare {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--ink-60);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.18s ease;
+}
+
+.handover-prepare:hover { color: var(--ink); }
+.prepare-arrow { font-size: 12px; color: var(--klein); font-weight: 600; }
+
+/* ---- handover: frosted action sheet ---- */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 20, 0.18);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  z-index: 5;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  max-width: 460px;
+  margin: 0 auto;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 22px calc(24px + env(safe-area-inset-bottom)) 22px;
+  background: rgba(243, 241, 234, 0.72);
+  border-top: 1px solid var(--line);
+  border-left: 1px solid rgba(255, 255, 255, 0.5);
+  border-right: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -20px 60px rgba(10, 23, 120, 0.22);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+  animation: sheet-up 0.22s ease;
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(18px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-25);
+  margin: 0 auto 12px;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ink-25);
+}
+
+.sheet-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.sheet-meta {
+  margin-top: 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-40);
+}
+
+.sheet-close {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  line-height: 1;
+  font-size: 16px;
+  color: var(--ink-60);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.sheet-close:hover { color: var(--ink); background: rgba(29, 43, 212, 0.06); }
+
+.sheet-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 16px;
 }
 
 .handover-btn {
@@ -275,16 +386,10 @@ body {
 .handover-btn:hover { background: rgba(29, 43, 212, 0.08); }
 .handover-btn:disabled { opacity: 0.45; cursor: default; }
 
-.handover-meta {
-  margin-top: 12px;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  color: var(--ink-40);
-}
-
 .handover-out {
-  margin-top: 10px;
-  max-height: 320px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -292,7 +397,7 @@ body {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 10px;
   padding: 14px 14px;
