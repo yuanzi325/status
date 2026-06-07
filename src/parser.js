@@ -228,6 +228,56 @@ function qualifyStatus(load, warningRatio, dangerRatio) {
 }
 
 /**
+ * Resolve and validate the target jsonl for a request, enforcing all path
+ * containment (lexical + realpath, no symlink escape). Returns
+ * { ok, path, mtimeMs, projectsRoot, realRoot } on success, or
+ * { ok: false, error } with a clear message. Shared by the monitor and the
+ * handover preview so both honour the exact same boundary.
+ */
+function resolveJsonlTarget(options = {}) {
+  const projectsRoot = path.resolve(resolveProjectsRoot(options.projectsRoot));
+  const realRoot = safeRealpath(projectsRoot) || projectsRoot;
+
+  if (options.workspace) {
+    const candidate = path.join(projectsRoot, options.workspace);
+    if (!isInside(projectsRoot, candidate)) {
+      return { ok: false, error: 'workspace escapes projects root', workspace: options.workspace };
+    }
+    const realCandidate = safeRealpath(candidate);
+    if (realCandidate && !isInside(realRoot, realCandidate)) {
+      return { ok: false, error: 'workspace escapes projects root', workspace: options.workspace };
+    }
+  }
+
+  if (options.jsonlPath) {
+    const resolvedJsonl = path.resolve(options.jsonlPath);
+    if (!isInside(projectsRoot, resolvedJsonl)) {
+      return { ok: false, error: 'jsonl path escapes projects root' };
+    }
+    const realJsonl = safeRealpath(resolvedJsonl);
+    if (!realJsonl) {
+      return { ok: false, error: `jsonl not found: ${options.jsonlPath}` };
+    }
+    if (!isInside(realRoot, realJsonl)) {
+      return { ok: false, error: 'jsonl path escapes projects root' };
+    }
+    let mtimeMs = null;
+    try {
+      mtimeMs = fs.statSync(realJsonl).mtimeMs;
+    } catch (_err) {
+      return { ok: false, error: `jsonl not found: ${options.jsonlPath}` };
+    }
+    return { ok: true, path: realJsonl, mtimeMs, projectsRoot, realRoot };
+  }
+
+  const latest = findLatestJsonl({ projectsRoot, workspace: options.workspace, realRoot });
+  if (!latest) {
+    return { ok: false, error: 'no session .jsonl found', workspace: options.workspace || null };
+  }
+  return { ok: true, path: latest.path, mtimeMs: latest.mtimeMs, projectsRoot, realRoot };
+}
+
+/**
  * Top-level: locate the latest session log, parse it, and build the full
  * monitor payload. Returns { ok: false, error } on any failure so the API
  * and UI can render a clear message.
@@ -237,83 +287,9 @@ function getSessionMonitor(options = {}) {
   const warningRatio = options.warningRatio || DEFAULT_WARNING_RATIO;
   const dangerRatio = options.dangerRatio || DEFAULT_DANGER_RATIO;
 
-  // Everything must stay inside the projects root: no `..` traversal, no
-  // arbitrary absolute paths, and no symlink that escapes after resolution.
-  // Reject before reading any file. We compare against the REAL root so a
-  // symlinked projects dir is handled consistently.
-  const projectsRoot = path.resolve(resolveProjectsRoot(options.projectsRoot));
-  const realRoot = safeRealpath(projectsRoot) || projectsRoot;
-
-  if (options.workspace) {
-    const candidate = path.join(projectsRoot, options.workspace);
-    // 1) lexical check on the resolved (but not yet realpath'd) path
-    if (!isInside(projectsRoot, candidate)) {
-      return {
-        ok: false,
-        error: 'workspace escapes projects root',
-        workspace: options.workspace,
-      };
-    }
-    // 2) if it exists, its real target must still be inside the real root
-    const realCandidate = safeRealpath(candidate);
-    if (realCandidate && !isInside(realRoot, realCandidate)) {
-      return {
-        ok: false,
-        error: 'workspace escapes projects root',
-        workspace: options.workspace,
-      };
-    }
-  }
-
-  let target;
-  if (options.jsonlPath) {
-    const resolvedJsonl = path.resolve(options.jsonlPath);
-    // 1) lexical containment of the resolved path
-    if (!isInside(projectsRoot, resolvedJsonl)) {
-      return {
-        ok: false,
-        error: 'jsonl path escapes projects root',
-      };
-    }
-    // 2) realpath: file must exist and its real target stay inside real root
-    const realJsonl = safeRealpath(resolvedJsonl);
-    if (!realJsonl) {
-      return {
-        ok: false,
-        error: `jsonl not found: ${options.jsonlPath}`,
-      };
-    }
-    if (!isInside(realRoot, realJsonl)) {
-      return {
-        ok: false,
-        error: 'jsonl path escapes projects root',
-      };
-    }
-    let mtimeMs = null;
-    try {
-      mtimeMs = fs.statSync(realJsonl).mtimeMs;
-    } catch (_err) {
-      return {
-        ok: false,
-        error: `jsonl not found: ${options.jsonlPath}`,
-      };
-    }
-    target = { path: realJsonl, mtimeMs };
-  } else {
-    target = findLatestJsonl({
-      projectsRoot,
-      workspace: options.workspace,
-      realRoot,
-    });
-  }
-
-  if (!target) {
-    return {
-      ok: false,
-      error: 'no session .jsonl found',
-      workspace: options.workspace || null,
-    };
-  }
+  const resolved = resolveJsonlTarget(options);
+  if (!resolved.ok) return resolved;
+  const target = { path: resolved.path, mtimeMs: resolved.mtimeMs };
 
   let parsed;
   try {
@@ -386,5 +362,6 @@ module.exports = {
   extractUsage,
   readUsageFromFile,
   computeUsage,
+  resolveJsonlTarget,
   getSessionMonitor,
 };

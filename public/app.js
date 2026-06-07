@@ -3,6 +3,7 @@
 const REFRESH_MS = 15000;
 let current = null;
 let activeBlock = 'summary';
+let handoverState = { loading: false, error: null, text: null, meta: null };
 
 /* ---- formatting helpers ---- */
 function compact(n) {
@@ -147,7 +148,74 @@ function renderPanel(d) {
     foot.textContent = def.foot;
     setRows(rows, def.rows);
   }
+  renderHandover();
 }
+
+/* ---- handover preview ---- */
+function renderHandover() {
+  const zone = document.getElementById('handoverZone');
+  const btn = document.getElementById('handoverBtn');
+  const meta = document.getElementById('handoverMeta');
+  const out = document.getElementById('handoverOut');
+  if (activeBlock !== 'handover') {
+    zone.hidden = true;
+    return;
+  }
+  zone.hidden = false;
+  btn.disabled = handoverState.loading;
+  btn.textContent = handoverState.loading ? 'GENERATING…' : 'GENERATE HANDOVER';
+
+  if (handoverState.meta) {
+    const m = handoverState.meta;
+    meta.hidden = false;
+    meta.textContent = `${m.provider} · ${m.model} · ${m.source.selected_turns} turns / ${m.source.total_chars} chars`;
+  } else {
+    meta.hidden = true;
+    meta.textContent = '';
+  }
+
+  if (handoverState.error) {
+    out.hidden = false;
+    out.classList.add('is-error');
+    out.textContent = `error · ${handoverState.error}`;
+  } else if (handoverState.text) {
+    out.hidden = false;
+    out.classList.remove('is-error');
+    out.textContent = handoverState.text;
+  } else {
+    out.hidden = true;
+    out.textContent = '';
+  }
+}
+
+async function runHandover() {
+  if (handoverState.loading) return;
+  handoverState = { loading: true, error: null, text: null, meta: null };
+  renderHandover();
+  try {
+    const res = await fetch('/api/handover/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      handoverState = { loading: false, error: null, text: data.handover, meta: data };
+    } else {
+      handoverState = {
+        loading: false,
+        error: (data && data.error) || 'failed',
+        text: null,
+        meta: null,
+      };
+    }
+  } catch (_err) {
+    handoverState = { loading: false, error: 'request failed', text: null, meta: null };
+  }
+  renderHandover();
+}
+
+document.getElementById('handoverBtn').addEventListener('click', runHandover);
 
 function setRows(container, pairs) {
   container.innerHTML = '';
@@ -178,6 +246,7 @@ function renderError(payload) {
     el.textContent = '—';
     el.classList.remove('is-word');
   });
+  document.getElementById('handoverZone').hidden = true;
 }
 
 function render() {

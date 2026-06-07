@@ -4,6 +4,7 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const { getSessionMonitor } = require('./parser');
+const { generateHandoverPreview } = require('./handover');
 
 /**
  * Minimal bearer auth. If SESSION_MONITOR_TOKEN is set, requests must carry
@@ -45,6 +46,32 @@ function createApp() {
       return res.status(500).json({ ok: false, error: err.message });
     }
     res.status(payload.ok ? 200 : 404).json(payload);
+  });
+
+  // Manual handover preview. Generates a draft summary only — no save, no
+  // inject, no window control. Reuses the same bearer auth.
+  app.post('/api/handover/preview', express.json({ limit: '16kb' }), async (req, res) => {
+    if (!isAuthorized(req)) {
+      return res
+        .status(401)
+        .set('WWW-Authenticate', 'Bearer')
+        .json({ ok: false, error: 'unauthorized' });
+    }
+    const body = req.body || {};
+    const options = {
+      workspace: body.workspace || undefined,
+      jsonlPath: body.jsonl || undefined,
+      projectsRoot: process.env.SESSION_MONITOR_PROJECTS || undefined,
+      turns: body.turns ? Number(body.turns) : undefined,
+      provider: body.provider || undefined,
+    };
+    let payload;
+    try {
+      payload = await generateHandoverPreview(options);
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+    res.status(payload.ok ? 200 : 400).json(payload);
   });
 
   app.use(express.static(path.join(__dirname, '..', 'public')));

@@ -2,9 +2,10 @@
 
 A **read-only** monitor for the current Claude Code window's token usage.
 It reads session `.jsonl` logs, extracts only `usage` token counts plus minimal
-file metadata, and renders a mobile-first dashboard. It does **not** kill
-processes, restart tmux, write handovers, touch hooks, or read/emit secrets,
-prompts, conversation text, or tool args/results.
+file metadata, and renders a mobile-first dashboard. It can also draft a
+**handover preview** on demand. It does **not** kill processes, restart tmux,
+switch/inject windows, write handover files or memory, touch hooks, or
+read/emit secrets, prompts, full conversation text, or tool args/results.
 
 ## Run
 
@@ -93,6 +94,71 @@ load >= 0.75           -> HANDOVER
 
 So `warning_threshold = 0.60 * context_limit` and
 `danger_threshold = 0.75 * context_limit` (120k / 150k at the default 200k).
+
+## Handover preview
+
+`POST /api/handover/preview` drafts a handover summary for the current window.
+**Preview only** — nothing is saved, injected, or written to memory, and no
+window is touched. It reads the same session jsonl as the monitor (same path
+containment), extracts a bounded amount of **plain user/assistant text only**
+(tool calls, tool results, thinking, images and attachments are dropped), and
+asks a small model to summarise it.
+
+JSON body (all optional):
+
+| field      | meaning                                                |
+| ---------- | ------------------------------------------------------ |
+| `workspace`| subdirectory under the projects root                   |
+| `jsonl`    | explicit path to a `.jsonl` (must stay inside the root)|
+| `turns`    | how many recent turns to read (default `20`)           |
+| `provider` | `mock` or `zhipu` (overrides `HANDOVER_PROVIDER`)       |
+
+It reuses the same bearer auth as the monitor (`401` without a valid token when
+`SESSION_MONITOR_TOKEN` is set).
+
+### Providers
+
+- **mock** (default) — no API key required; returns a deterministic draft that
+  embeds the real source/monitor statistics. Use it to verify the wiring.
+- **zhipu** — calls Zhipu BigModel chat completions (GLM‑4.5‑Air). If
+  `HANDOVER_PROVIDER=zhipu` but `ZHIPU_API_KEY` is unset, the endpoint returns
+  `{ "ok": false, "error": "missing ZHIPU_API_KEY" }` (no crash). Requests use
+  a low temperature, a 30s timeout, and **no retries**; the API key is never
+  logged or returned.
+
+### Sample response (mock)
+
+```json
+{
+  "ok": true,
+  "provider": "mock",
+  "model": "mock",
+  "handover": "# Handover Preview (mock)\n\n## summary\n...",
+  "source": {
+    "jsonl_path": ".../conversation.jsonl",
+    "workspace": null,
+    "selected_turns": 4,
+    "total_chars": 63
+  },
+  "monitor": { "status": "CLEAR", "window_load": 84147, "context_limit": 200000 },
+  "updated_at": "2026-06-07T00:00:00.000Z"
+}
+```
+
+### Environment
+
+| var                        | default     | meaning                                  |
+| -------------------------- | ----------- | ---------------------------------------- |
+| `HANDOVER_PROVIDER`        | `mock`      | `mock` or `zhipu`                        |
+| `ZHIPU_API_KEY`            | —           | required for the `zhipu` provider        |
+| `ZHIPU_MODEL`              | `glm-4.5-air` | model id — **use the exact id from the BigModel console**; do not assume |
+| `ZHIPU_BASE_URL`           | BigModel v4 chat endpoint | override the API URL if needed |
+| `HANDOVER_MAX_TURNS`       | `20`        | recent turns to read                     |
+| `HANDOVER_MAX_INPUT_CHARS` | `12000`     | total input character budget             |
+| `HANDOVER_MAX_MSG_CHARS`   | `1500`      | per-message character cap                |
+
+The model id is **env-configurable, not hardcoded**. `glm-4.5-air` is only a
+default — confirm the actual model name in the Zhipu BigModel console.
 
 ## Security boundary
 

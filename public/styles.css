@@ -243,3 +243,53 @@ body {
 }
 
 .panel.is-error .panel-status { font-size: 20px; }
+
+/* ---- handover preview ---- */
+.handover-zone {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ink-25);
+}
+
+.handover-btn {
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 11px 16px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  cursor: pointer;
+  transition: background 0.18s ease, opacity 0.18s ease;
+}
+
+.handover-btn:hover { background: rgba(29, 43, 212, 0.08); }
+.handover-btn:disabled { opacity: 0.45; cursor: default; }
+
+.handover-meta {
+  margin-top: 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-40);
+}
+
+.handover-out {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  padding: 14px 14px;
+}
+
+.handover-out.is-error { color: var(--ink-60); }
