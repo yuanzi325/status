@@ -59,10 +59,10 @@ line, and returns the last record carrying `usage`. It tolerates both
   },
   "signals": { "pulse": "active", "drift": "low", "drift_ratio": 0.026 },
   "handover": {
-    "warning_threshold": 140000,
-    "danger_threshold": 170000,
-    "tokens_left_to_warning": 55853,
-    "tokens_left_to_danger": 85853,
+    "warning_threshold": 120000,
+    "danger_threshold": 150000,
+    "tokens_left_to_warning": 35853,
+    "tokens_left_to_danger": 65853,
     "tokens_left_to_full": 115853
   },
   "recent_turns": [ /* usage-only, no content */ ]
@@ -80,6 +80,34 @@ pulse_tokens     = input + output
 cache_read_ratio = cache_read / max(cache_read + cache_creation, 1)
 load             = window_load / context_limit
 ```
+
+### Thresholds
+
+`status` is derived from `load` against two ratios of `context_limit`:
+
+```text
+load < 0.60            -> CLEAR
+0.60 <= load < 0.75    -> WATCH
+load >= 0.75           -> HANDOVER
+```
+
+So `warning_threshold = 0.60 * context_limit` and
+`danger_threshold = 0.75 * context_limit` (120k / 150k at the default 200k).
+
+## Security boundary
+
+This endpoint exposes machine-local metadata (`jsonl_path`, `model`,
+`updated_at`, window status). It does **not** expose conversation text, but it
+should not run unauthenticated on a public network.
+
+- **Auth** — set `SESSION_MONITOR_TOKEN` and every request must send
+  `Authorization: Bearer <token>`; missing/wrong tokens get `401`. When the
+  variable is unset, access is open for local development. The token value is
+  never logged or returned.
+- **Path containment** — `?jsonl=` and `?workspace=` are resolved and must land
+  **inside** the projects root (`SESSION_MONITOR_PROJECTS`, default
+  `~/.claude/projects`). Absolute paths outside it and `../` traversal are
+  rejected with `{ "ok": false }` before any file is read.
 
 ## UI
 

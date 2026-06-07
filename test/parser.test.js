@@ -9,10 +9,17 @@ const {
   computeUsage,
   readUsageFromFile,
   getSessionMonitor,
+  isInside,
+  DEFAULT_WARNING_RATIO,
+  DEFAULT_DANGER_RATIO,
 } = require('../src/parser');
 
 const FIXTURES = path.join(__dirname, 'fixtures');
 const f = (name) => path.join(FIXTURES, name);
+
+// All getSessionMonitor tests treat the fixtures dir as the projects root so
+// path-containment checks pass for in-tree fixtures.
+const mon = (opts = {}) => getSessionMonitor({ projectsRoot: FIXTURES, ...opts });
 
 test('extractUsage reads obj.message.usage', () => {
   const usage = extractUsage({ message: { usage: { input_tokens: 5 } } });
@@ -70,7 +77,7 @@ test('readUsageFromFile reports not found and skips bad json', () => {
 });
 
 test('getSessionMonitor builds full payload from message.usage', () => {
-  const out = getSessionMonitor({ jsonlPath: f('message-usage.jsonl') });
+  const out = mon({ jsonlPath: f('message-usage.jsonl') });
   assert.equal(out.ok, true);
   assert.equal(out.model, 'claude-opus-4-8');
   assert.equal(out.context_limit, 200000);
@@ -85,26 +92,59 @@ test('getSessionMonitor builds full payload from message.usage', () => {
 });
 
 test('getSessionMonitor returns clear error when no usage present', () => {
-  const out = getSessionMonitor({ jsonlPath: f('no-usage.jsonl') });
+  const out = mon({ jsonlPath: f('no-usage.jsonl') });
   assert.equal(out.ok, false);
   assert.match(out.error, /no usage record/);
 });
 
 test('getSessionMonitor returns clear error when file missing', () => {
-  const out = getSessionMonitor({ jsonlPath: f('does-not-exist.jsonl') });
+  const out = mon({ jsonlPath: f('does-not-exist.jsonl') });
   assert.equal(out.ok, false);
   assert.match(out.error, /not found/);
 });
 
-test('status crosses to WATCH and HANDOVER with smaller limits', () => {
-  const watch = getSessionMonitor({
-    jsonlPath: f('message-usage.jsonl'),
-    contextLimit: 110000,
-  });
-  assert.equal(watch.status, 'WATCH');
-  const handover = getSessionMonitor({
-    jsonlPath: f('message-usage.jsonl'),
-    contextLimit: 95000,
-  });
-  assert.equal(handover.status, 'HANDOVER');
+/* ---- thresholds ---- */
+
+test('default thresholds are 0.60 / 0.75', () => {
+  assert.equal(DEFAULT_WARNING_RATIO, 0.6);
+  assert.equal(DEFAULT_DANGER_RATIO, 0.75);
+  const out = mon({ jsonlPath: f('message-usage.jsonl') });
+  assert.equal(out.handover.warning_threshold, 120000); // 0.60 * 200000
+  assert.equal(out.handover.danger_threshold, 150000); // 0.75 * 200000
+});
+
+test('status crosses CLEAR -> WATCH -> HANDOVER at 60/75', () => {
+  // window_load = 84147
+  const clear = mon({ jsonlPath: f('message-usage.jsonl'), contextLimit: 200000 });
+  assert.equal(clear.status, 'CLEAR'); // 0.42
+  const watch = mon({ jsonlPath: f('message-usage.jsonl'), contextLimit: 130000 });
+  assert.equal(watch.status, 'WATCH'); // 0.647
+  const handover = mon({ jsonlPath: f('message-usage.jsonl'), contextLimit: 100000 });
+  assert.equal(handover.status, 'HANDOVER'); // 0.841
+});
+
+/* ---- path containment ---- */
+
+test('isInside accepts the root and contained paths, rejects escapes', () => {
+  assert.equal(isInside(FIXTURES, FIXTURES), true);
+  assert.equal(isInside(FIXTURES, f('message-usage.jsonl')), true);
+  assert.equal(isInside(FIXTURES, path.join(FIXTURES, '..', 'secret')), false);
+});
+
+test('jsonl path outside projects root is rejected without reading', () => {
+  const out = mon({ jsonlPath: '/etc/passwd' });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /escapes projects root/);
+});
+
+test('relative jsonl traversal out of root is rejected', () => {
+  const out = mon({ jsonlPath: path.join(FIXTURES, '..', '..', 'package.json') });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /escapes projects root/);
+});
+
+test('workspace path traversal is rejected', () => {
+  const out = mon({ workspace: '../../etc' });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /escapes projects root/);
 });

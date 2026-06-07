@@ -13,8 +13,17 @@ const os = require('os');
  */
 
 const DEFAULT_CONTEXT_LIMIT = 200000;
-const DEFAULT_WARNING_RATIO = 0.7; // token pressure starts to matter
-const DEFAULT_DANGER_RATIO = 0.85; // time to hand over
+const DEFAULT_WARNING_RATIO = 0.6; // token pressure starts to matter
+const DEFAULT_DANGER_RATIO = 0.75; // time to hand over
+
+/**
+ * True if `child` resolves to `parent` itself or somewhere inside it.
+ * Used to keep all file access contained to the projects root.
+ */
+function isInside(parent, child) {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
 
 /**
  * Resolve the projects root that holds Claude Code session logs.
@@ -197,8 +206,29 @@ function getSessionMonitor(options = {}) {
   const warningRatio = options.warningRatio || DEFAULT_WARNING_RATIO;
   const dangerRatio = options.dangerRatio || DEFAULT_DANGER_RATIO;
 
+  // Everything must stay inside the projects root: no `..` traversal, no
+  // arbitrary absolute paths. Reject before touching the filesystem.
+  const projectsRoot = resolveProjectsRoot(options.projectsRoot);
+
+  if (options.workspace) {
+    const candidate = path.join(projectsRoot, options.workspace);
+    if (!isInside(projectsRoot, candidate)) {
+      return {
+        ok: false,
+        error: 'workspace escapes projects root',
+        workspace: options.workspace,
+      };
+    }
+  }
+
   let target;
   if (options.jsonlPath) {
+    if (!isInside(projectsRoot, options.jsonlPath)) {
+      return {
+        ok: false,
+        error: 'jsonl path escapes projects root',
+      };
+    }
     let mtimeMs = null;
     try {
       mtimeMs = fs.statSync(options.jsonlPath).mtimeMs;
@@ -211,7 +241,7 @@ function getSessionMonitor(options = {}) {
     target = { path: options.jsonlPath, mtimeMs };
   } else {
     target = findLatestJsonl({
-      projectsRoot: options.projectsRoot,
+      projectsRoot,
       workspace: options.workspace,
     });
   }
@@ -285,6 +315,9 @@ function getSessionMonitor(options = {}) {
 
 module.exports = {
   DEFAULT_CONTEXT_LIMIT,
+  DEFAULT_WARNING_RATIO,
+  DEFAULT_DANGER_RATIO,
+  isInside,
   resolveProjectsRoot,
   collectJsonlFiles,
   findLatestJsonl,

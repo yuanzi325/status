@@ -1,14 +1,37 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const path = require('path');
 const { getSessionMonitor } = require('./parser');
+
+/**
+ * Minimal bearer auth. If SESSION_MONITOR_TOKEN is set, requests must carry
+ * `Authorization: Bearer <token>`. If it is unset, access is allowed (local
+ * dev mode). The token value is never logged or returned.
+ */
+function isAuthorized(req) {
+  const expected = process.env.SESSION_MONITOR_TOKEN;
+  if (!expected) return true; // dev mode: no token configured
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/);
+  if (!match) return false;
+  const provided = Buffer.from(match[1]);
+  const want = Buffer.from(expected);
+  return provided.length === want.length && crypto.timingSafeEqual(provided, want);
+}
 
 function createApp() {
   const app = express();
 
   // Read-only session monitor endpoint. Returns usage metrics only.
   app.get('/api/session-monitor', (req, res) => {
+    if (!isAuthorized(req)) {
+      return res
+        .status(401)
+        .set('WWW-Authenticate', 'Bearer')
+        .json({ ok: false, error: 'unauthorized' });
+    }
     const options = {
       workspace: req.query.workspace || undefined,
       jsonlPath: req.query.jsonl || undefined,
@@ -38,4 +61,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp };
+module.exports = { createApp, isAuthorized };
