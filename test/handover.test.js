@@ -266,6 +266,102 @@ test('zhipu save records provider_usage in latest.json and latest.md', async () 
   }
 });
 
+test('save reuses a provided payload and never calls the model', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.HANDOVER_OUT_DIR = outDir;
+  delete process.env.ZHIPU_API_KEY;
+  // any model call would go through fetch — make it throw to prove we don't
+  const realFetch = global.fetch;
+  global.fetch = async () => {
+    throw new Error('model must not be called when saving an existing payload');
+  };
+  try {
+    const payload = {
+      provider: 'zhipu',
+      model: 'glm-4.5-air',
+      handover: '# 给下一个窗口的交接\nSAVED_VERBATIM_MARKER',
+      source: { jsonl_path: '/x/c.jsonl', workspace: null, selected_turns: 7, total_chars: 1234 },
+      monitor: { status: 'WATCH', window_load: 5, context_limit: 200000 },
+      provider_usage: { prompt_tokens: 4800, completion_tokens: 200, total_tokens: 5000 },
+      updated_at: '2026-06-07T00:00:00.000Z',
+    };
+    // provider says zhipu and there is no key, yet save succeeds: no generation
+    const out = await saveHandoverPreview({ provider: 'zhipu', payload });
+    assert.equal(out.ok, true);
+    assert.deepEqual(out.provider_usage, { prompt_tokens: 4800, completion_tokens: 200, total_tokens: 5000 });
+
+    const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
+    assert.ok(json.handover.includes('SAVED_VERBATIM_MARKER'));
+    assert.equal(json.provider, 'zhipu');
+    assert.equal(json.source.selected_turns, 7);
+    assert.equal(json.consumed, false);
+
+    const md = fs.readFileSync(path.join(outDir, 'latest.md'), 'utf8');
+    assert.match(md, /provider\.total_tokens: 5000/);
+    assert.match(md, /SAVED_VERBATIM_MARKER/);
+  } finally {
+    global.fetch = realFetch;
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('empty/whitespace handover payload falls back to generating', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.HANDOVER_OUT_DIR = outDir;
+  try {
+    const out = await saveHandoverPreview({
+      projectsRoot: root,
+      jsonlPath: convo,
+      provider: 'mock',
+      payload: { handover: '   ' }, // not a real payload -> fallback
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.provider, 'mock');
+    const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
+    assert.ok(json.handover.includes('给下一个窗口的交接'));
+  } finally {
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/handover/save accepts a payload and saves it verbatim', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.HANDOVER_OUT_DIR = outDir;
+  const app = createApp();
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const res = await fetch(`${base}/api/handover/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payload: {
+          provider: 'zhipu',
+          model: 'glm-4.5-air',
+          handover: '# 给下一个窗口的交接\nMARKER_API',
+          source: { jsonl_path: '/x', workspace: null, selected_turns: 3, total_chars: 99 },
+          monitor: { status: 'CLEAR', window_load: 1, context_limit: 200000 },
+          provider_usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+          updated_at: '2026-06-07T00:00:00.000Z',
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.deepEqual(data.provider_usage, { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
+    const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
+    assert.ok(json.handover.includes('MARKER_API'));
+  } finally {
+    server.close();
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test('save without HANDOVER_OUT_DIR returns a clear error', async () => {
   delete process.env.HANDOVER_OUT_DIR;
   const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });

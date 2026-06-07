@@ -402,13 +402,75 @@ function buildMarkdownDoc(preview) {
 }
 
 /**
- * Generate a handover preview and persist it to HANDOVER_OUT_DIR as
- * latest.md + latest.json. Writes only inside HANDOVER_OUT_DIR; never into the
- * Claude jsonl directory. Does not switch windows or touch hooks.
+ * Normalise a client-supplied preview payload into the shape the writer
+ * expects, with light caps/sanitation. Used by the "save existing preview"
+ * path so we don't re-call the model just to persist.
+ */
+function coercePreviewPayload(p) {
+  const str = (v, max) =>
+    typeof v === 'string' ? v.slice(0, max) : null;
+  const intOrNull = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  };
+  const src = (p && p.source) || {};
+  const mon = (p && p.monitor) || {};
+  let usage = null;
+  if (p && p.provider_usage && typeof p.provider_usage === 'object') {
+    const u = p.provider_usage;
+    const num = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+    };
+    usage = {
+      prompt_tokens: num(u.prompt_tokens),
+      completion_tokens: num(u.completion_tokens),
+      total_tokens: num(u.total_tokens),
+    };
+  }
+  return {
+    ok: true,
+    provider: str(p && p.provider, 64) || 'unknown',
+    model: str(p && p.model, 128) || 'unknown',
+    handover: String((p && p.handover) || '').slice(0, 100000),
+    source: {
+      jsonl_path: str(src.jsonl_path, 4096),
+      workspace: str(src.workspace, 1024),
+      selected_turns: intOrNull(src.selected_turns),
+      total_chars: intOrNull(src.total_chars),
+    },
+    monitor: {
+      status: str(mon.status, 32),
+      window_load: intOrNull(mon.window_load),
+      context_limit: intOrNull(mon.context_limit),
+    },
+    provider_usage: usage,
+    updated_at: str(p && p.updated_at, 64) || new Date().toISOString(),
+  };
+}
+
+/**
+ * Persist a handover to HANDOVER_OUT_DIR as latest.md + latest.json. If
+ * options.payload carries an already-generated preview (non-empty handover
+ * string), it is saved as-is (zero model calls); otherwise a fresh preview is
+ * generated first. Writes only inside HANDOVER_OUT_DIR; never into the Claude
+ * jsonl directory. Does not switch windows or touch hooks.
  */
 async function saveHandoverPreview(options = {}) {
-  const preview = await generateHandoverPreview(options);
-  if (!preview.ok) return preview;
+  const payload = options.payload;
+  const hasPayload =
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.handover === 'string' &&
+    payload.handover.trim();
+
+  let preview;
+  if (hasPayload) {
+    preview = coercePreviewPayload(payload); // save existing, no model call
+  } else {
+    preview = await generateHandoverPreview(options);
+    if (!preview.ok) return preview;
+  }
 
   const outDir = process.env.HANDOVER_OUT_DIR;
   if (!outDir) {

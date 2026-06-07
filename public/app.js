@@ -281,10 +281,13 @@ async function runHandoverSave() {
   saveState = { loading: true, error: null, saved: null };
   renderSheet();
   try {
+    // Reuse the preview we already paid tokens for, if there is one — saving
+    // it costs zero model calls. Fall back to generate-then-save otherwise.
+    const body = handoverState.meta ? { payload: handoverState.meta } : {};
     const res = await fetch('/api/handover/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (data && data.ok) {

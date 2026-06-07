@@ -181,12 +181,18 @@ default — confirm the actual model name in the Zhipu BigModel console.
 
 ## Handover save
 
-`POST /api/handover/save` generates a preview (same options/providers as
-`/preview`) and persists it to `HANDOVER_OUT_DIR` for a later SessionStart hook
-to pick up. **Save only** — it writes two files and nothing else: it does not
-switch/restart any window, does not change hooks, does not write memory, and
-never writes into the Claude jsonl directory.
+`POST /api/handover/save` persists a handover to `HANDOVER_OUT_DIR` for a later
+SessionStart hook to pick up. **Save only** — it writes two files and nothing
+else: it does not switch/restart any window, does not change hooks, does not
+write memory, and never writes into the Claude jsonl directory.
 
+- **Save an existing preview (zero tokens).** If the body carries a
+  `payload` with a non-empty `handover` string, it is saved **as-is** with no
+  model call — so generating once costs tokens and saving costs `0`. The
+  frontend's `SAVE LATEST` sends back the preview it just generated. The
+  payload is lightly sanitised/capped (it's written verbatim to disk, never
+  executed). If `payload` is missing or its `handover` is empty, it falls back
+  to generating a fresh preview first (same options/providers as `/preview`).
 - If `HANDOVER_OUT_DIR` is unset, it returns `400` with
   `{ "ok": false, "error": "missing HANDOVER_OUT_DIR" }`.
 - Files are written **atomically** (`.tmp` then `rename`) so a reader never
