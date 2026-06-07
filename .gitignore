@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+.env
+*.local
+
+# local render artifacts
+.shot.js
+monitor-*.png

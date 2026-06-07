@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-06-07T00:00:00.000Z","message":{"role":"user","content":"redacted"}}
+{"type":"assistant","timestamp":"2026-06-07T00:00:01.000Z","message":{"role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1200,"output_tokens":800,"cache_read_input_tokens":40000,"cache_creation_input_tokens":5000}}}
+{"type":"assistant","timestamp":"2026-06-07T00:01:00.000Z","message":{"role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":3204,"output_tokens":2100,"cache_read_input_tokens":78843,"cache_creation_input_tokens":2100}}}

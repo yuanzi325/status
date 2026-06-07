@@ -1,0 +1,2 @@
+{"type":"meta","timestamp":"2026-06-07T00:00:00.000Z","note":"redacted"}
+{"type":"result","timestamp":"2026-06-07T00:00:02.000Z","model":"claude-sonnet-4-6","usage":{"input_tokens":500,"output_tokens":300,"cache_read_input_tokens":12000,"cache_creation_input_tokens":1000}}

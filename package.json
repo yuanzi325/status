@@ -1,0 +1,17 @@
+{
+  "name": "claude-session-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only Claude Code session/context monitor — MVP",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
