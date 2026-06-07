@@ -97,12 +97,17 @@ So `warning_threshold = 0.60 * context_limit` and
 
 ## Handover preview
 
-`POST /api/handover/preview` drafts a handover summary for the current window.
+`POST /api/handover/preview` drafts a handover for the current window.
 **Preview only** — nothing is saved, injected, or written to memory, and no
 window is touched. It reads the same session jsonl as the monitor (same path
 containment), extracts a bounded amount of **plain user/assistant text only**
 (tool calls, tool results, thinking, images and attachments are dropped), and
 asks a small model to summarise it.
+
+The handover is written **for next-window continuity, not a generic report** —
+it tells the next Claude Code window what is happening, what the user just
+cared about, the confirmed technical state, how to pick the thread back up,
+pitfalls not to repeat, memory candidates, and risks / unfinished work.
 
 JSON body (all optional):
 
@@ -110,7 +115,7 @@ JSON body (all optional):
 | ---------- | ------------------------------------------------------ |
 | `workspace`| subdirectory under the projects root                   |
 | `jsonl`    | explicit path to a `.jsonl` (must stay inside the root)|
-| `turns`    | how many recent turns to read (default `20`)           |
+| `turns`    | how many recent turns to read (default `40`)           |
 | `provider` | `mock` or `zhipu` (overrides `HANDOVER_PROVIDER`)       |
 
 It reuses the same bearer auth as the monitor (`401` without a valid token when
@@ -153,9 +158,9 @@ It reuses the same bearer auth as the monitor (`401` without a valid token when
 | `ZHIPU_API_KEY`            | —           | required for the `zhipu` provider        |
 | `ZHIPU_MODEL`              | `glm-4.5-air` | model id — **use the exact id from the BigModel console**; do not assume |
 | `ZHIPU_BASE_URL`           | BigModel v4 chat endpoint | override the API URL if needed |
-| `HANDOVER_MAX_TURNS`       | `20`        | recent turns to read                     |
-| `HANDOVER_MAX_INPUT_CHARS` | `12000`     | total input character budget             |
-| `HANDOVER_MAX_MSG_CHARS`   | `1500`      | per-message character cap                |
+| `HANDOVER_MAX_TURNS`       | `40`        | recent turns to read                     |
+| `HANDOVER_MAX_INPUT_CHARS` | `20000`     | total input character budget             |
+| `HANDOVER_MAX_MSG_CHARS`   | `1800`      | per-message character cap                |
 | `HANDOVER_OUT_DIR`         | —           | directory the save endpoint writes to    |
 
 The model id is **env-configurable, not hardcoded**. `glm-4.5-air` is only a

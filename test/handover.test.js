@@ -10,6 +10,10 @@ const {
   getRecentConversationTurns,
   generateHandoverPreview,
   saveHandoverPreview,
+  buildHandoverPrompt,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_MAX_INPUT_CHARS,
+  DEFAULT_MAX_MSG_CHARS,
 } = require('../src/handover');
 const { createApp } = require('../src/server');
 
@@ -78,7 +82,7 @@ test('getRecentConversationTurns extracts only user/assistant text', () => {
 test('per-message text is truncated to the cap', () => {
   const r = getRecentConversationTurns({ projectsRoot: root, jsonlPath: convo });
   const longTurn = r.turns[r.turns.length - 1];
-  assert.ok(longTurn.text.length <= 1500 + 20);
+  assert.ok(longTurn.text.length <= 1800 + 20); // default cap is 1800
   assert.match(longTurn.text, /\[truncated\]/);
 });
 
@@ -95,6 +99,23 @@ test('total input chars budget trims oldest turns', () => {
   assert.ok(r.source.total_chars <= 30 || r.source.selected_turns === 1);
 });
 
+test('default context budgets are 40 / 20000 / 1800', () => {
+  assert.equal(DEFAULT_MAX_TURNS, 40);
+  assert.equal(DEFAULT_MAX_INPUT_CHARS, 20000);
+  assert.equal(DEFAULT_MAX_MSG_CHARS, 1800);
+});
+
+test('buildHandoverPrompt frames next-window continuity, no tool content', () => {
+  const r = getRecentConversationTurns({ projectsRoot: root, jsonlPath: convo });
+  const prompt = buildHandoverPrompt(r.turns, { status: 'CLEAR', window_load: 350, context_limit: 200000 });
+  assert.ok(prompt.includes('给下一个窗口的交接'));
+  assert.ok(prompt.includes('下一窗口应该怎么接'));
+  assert.ok(prompt.includes('不要重复踩的坑'));
+  // the transcript embedded in the prompt must never carry tool content
+  assert.equal(prompt.includes('TOOL_INPUT_LEAK_TOKEN'), false);
+  assert.equal(prompt.includes('TOOL_RESULT_LEAK_TOKEN'), false);
+});
+
 test('mock provider needs no API key and returns ok', async () => {
   delete process.env.ZHIPU_API_KEY;
   const out = await generateHandoverPreview({
@@ -106,6 +127,8 @@ test('mock provider needs no API key and returns ok', async () => {
   assert.equal(out.provider, 'mock');
   assert.equal(out.model, 'mock');
   assert.match(out.handover, /mock/i);
+  assert.ok(out.handover.includes('给下一个窗口的交接')); // new continuity structure
+  assert.ok(out.handover.includes('下一窗口应该怎么接'));
   assert.equal(out.source.selected_turns, 4);
   assert.equal(typeof out.monitor.status, 'string');
   // never leak raw tool content / conversation transcript

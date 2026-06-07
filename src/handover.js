@@ -14,9 +14,9 @@ const { resolveJsonlTarget, getSessionMonitor, isInside, safeRealpath } = requir
  * memory, or touch any window.
  */
 
-const DEFAULT_MAX_TURNS = intFromEnv('HANDOVER_MAX_TURNS', 20);
-const DEFAULT_MAX_INPUT_CHARS = intFromEnv('HANDOVER_MAX_INPUT_CHARS', 12000);
-const DEFAULT_MAX_MSG_CHARS = intFromEnv('HANDOVER_MAX_MSG_CHARS', 1500);
+const DEFAULT_MAX_TURNS = intFromEnv('HANDOVER_MAX_TURNS', 40);
+const DEFAULT_MAX_INPUT_CHARS = intFromEnv('HANDOVER_MAX_INPUT_CHARS', 20000);
+const DEFAULT_MAX_MSG_CHARS = intFromEnv('HANDOVER_MAX_MSG_CHARS', 1800);
 const ZHIPU_TIMEOUT_MS = intFromEnv('HANDOVER_ZHIPU_TIMEOUT_MS', 30000);
 
 function intFromEnv(name, fallback) {
@@ -109,8 +109,9 @@ function getRecentConversationTurns(options = {}) {
 }
 
 /**
- * Build the Chinese handover prompt. The model may answer in Markdown; the
- * backend does not require strict JSON.
+ * Build the Chinese handover prompt. The goal is continuity for the NEXT
+ * Claude Code window — how to pick up the thread and keep going — not a
+ * generic project report. The model may answer in Markdown.
  */
 function buildHandoverPrompt(turns, monitor) {
   const transcript = turns
@@ -122,19 +123,37 @@ function buildHandoverPrompt(turns, monitor) {
     : '当前窗口状态：未知。';
 
   return [
-    '你是一个会话交接（handover）助手。下面是一段 Claude Code 工作会话的最近对话片段。',
-    '请基于这些内容，生成一份简洁、准确的中文交接摘要，方便下一个窗口快速接手。',
+    '你在为下一个 Claude Code 工作窗口写交接。下面是当前会话的最近对话片段。',
+    '目标不是写项目周报，而是让下一个窗口醒来后能自然接上话、知道现在该继续做什么。',
     ctx,
-    '请覆盖以下部分，可用 Markdown 标题组织（无需输出 JSON）：',
-    '- summary：一段话总览',
-    '- current_tasks：正在进行的任务',
-    '- open_questions：尚未确认或待决的问题',
-    '- technical_state：技术现状（涉及的文件、命令、配置、分支等）',
-    '- emotional_context：协作语气/偏好/约束',
-    '- next_actions：下一步建议动作',
-    '- memory_candidates：值得长期记住的事实',
-    '- risks：风险与注意事项',
-    '只依据给出的对话内容，不要编造未出现的信息。',
+    '请输出 Markdown，严格使用下面的标题结构：',
+    '',
+    '# 给下一个窗口的交接',
+    '',
+    '## 现在正在发生什么',
+    '用 3-6 句话说明当前对话/任务主线，要具体，不要泛泛总结。',
+    '',
+    '## 沅沅刚刚最在意什么',
+    '抓用户最近真正关心的点、焦虑点、审美偏好、技术担忧或情绪状态；提炼重点，不要逐条复述。',
+    '',
+    '## 已经确认的技术状态',
+    '列出对话里明确出现过的仓库、文件、部署状态、环境变量、接口、测试结果；不要编造。',
+    '',
+    '## 下一窗口应该怎么接',
+    '写出新窗口开场后应该优先回应什么、继续推进什么；重点是接话姿势和下一步动作，不是抽象建议。',
+    '',
+    '## 不要重复踩的坑',
+    '列出刚刚已经澄清过、用户不想再解释的点；只基于输入内容生成。',
+    '',
+    '## 可以后续沉淀进记忆的内容',
+    '列出 3-8 条候选长期记忆，不要太多；如果没有就写“暂无”。',
+    '',
+    '## 风险与未完成',
+    '列出当前没完成、需要小心的地方（如尚未 hook 注入、尚未自动切窗、保存文件是否已配置等）。',
+    '',
+    '风格要求：中文；简洁但有人味；不要像项目周报；不要机械复述全部对话；',
+    '不要用“用户表达了……”这类 AI 腔太重的句式；保留技术精确性但要服务于“新窗口接得上”；',
+    '不要编造没出现的信息；如果最近对话太短，明确说明“可用上下文有限”。',
     '',
     '=== 对话片段开始 ===',
     transcript,
@@ -150,34 +169,35 @@ function buildMockHandover(source, monitor) {
   const status = monitor ? monitor.status : 'unknown';
   const load = monitor ? monitor.window_load : 'n/a';
   const limit = monitor ? monitor.context_limit : 'n/a';
+  const thin = source.selected_turns < 4;
   return [
-    '# Handover Preview (mock)',
+    '# 给下一个窗口的交接',
+    '_（mock 占位输出，不调用真实模型；不含原始对话正文）_',
     '',
-    '## summary',
-    `基于最近 ${source.selected_turns} 轮对话（约 ${source.total_chars} 字符）生成的占位摘要。` +
-      '这是 mock provider 输出，用于在不调用真实模型时验证链路。',
+    '## 现在正在发生什么',
+    `读取了最近 ${source.selected_turns} 轮对话（约 ${source.total_chars} 字符）。` +
+      (thin
+        ? '可用上下文有限，真实 provider 会在更多对话上给出具体主线。'
+        : '接入真实 provider 后，这里会用 3-6 句描述当前任务主线。'),
     '',
-    '## current_tasks',
-    '- （mock）当前任务占位，接入真实 provider 后由模型填充。',
+    '## 沅沅刚刚最在意什么',
+    '- （mock）真实摘要会在此提炼用户最近的关注点与偏好。',
     '',
-    '## open_questions',
-    '- （mock）待决问题占位。',
-    '',
-    '## technical_state',
+    '## 已经确认的技术状态',
     `- 窗口状态：status=${status}，window_load=${load}，context_limit=${limit}。`,
     `- 读取来源：${source.selected_turns} turns / ${source.total_chars} chars。`,
     '',
-    '## emotional_context',
-    '- （mock）协作偏好占位。',
+    '## 下一窗口应该怎么接',
+    '- 设置 HANDOVER_PROVIDER=zhipu 并配置 ZHIPU_API_KEY，即可得到真实交接。',
     '',
-    '## next_actions',
-    '- 设置 HANDOVER_PROVIDER=zhipu 并配置 ZHIPU_API_KEY 以获得真实摘要。',
+    '## 不要重复踩的坑',
+    '- （mock）真实摘要会在此列出刚澄清过、不要重复的点。',
     '',
-    '## memory_candidates',
-    '- （mock）长期记忆候选占位。',
+    '## 可以后续沉淀进记忆的内容',
+    '- 暂无（mock 占位）。',
     '',
-    '## risks',
-    '- （mock）这是占位输出，不要当作真实交接内容。',
+    '## 风险与未完成',
+    '- 这是 mock 占位输出，不要当作真实交接内容。',
   ].join('\n');
 }
 
@@ -410,6 +430,9 @@ async function saveHandoverPreview(options = {}) {
 }
 
 module.exports = {
+  DEFAULT_MAX_TURNS,
+  DEFAULT_MAX_INPUT_CHARS,
+  DEFAULT_MAX_MSG_CHARS,
   extractMessageText,
   getRecentConversationTurns,
   buildHandoverPrompt,
