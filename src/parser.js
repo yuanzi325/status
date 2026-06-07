@@ -26,6 +26,18 @@ function isInside(parent, child) {
 }
 
 /**
+ * Resolve a path to its real (symlink-followed) location, or null if it does
+ * not exist / is not accessible. Never throws.
+ */
+function safeRealpath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
  * Resolve the projects root that holds Claude Code session logs.
  * Order: explicit arg -> SESSION_MONITOR_PROJECTS env -> ~/.claude/projects
  */
@@ -39,9 +51,14 @@ function resolveProjectsRoot(explicitRoot) {
 
 /**
  * Walk a directory tree collecting every *.jsonl file with its mtime.
+ *
+ * Follows symlinks but never escapes the real projects root: any entry whose
+ * real (symlink-resolved) path lands outside `realRoot` is skipped. Unreadable
+ * or broken entries are skipped rather than thrown.
  */
-function collectJsonlFiles(root) {
+function collectJsonlFiles(root, realRoot) {
   const out = [];
+  const base = realRoot || safeRealpath(root) || path.resolve(root);
   let entries;
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -50,15 +67,20 @@ function collectJsonlFiles(root) {
   }
   for (const entry of entries) {
     const full = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...collectJsonlFiles(full));
-    } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-      try {
-        const stat = fs.statSync(full);
-        out.push({ path: full, mtimeMs: stat.mtimeMs });
-      } catch (_err) {
-        // ignore unreadable file
-      }
+    // Resolve the real target and refuse anything that escapes the root
+    // (this catches symlinks pointing outside projectsRoot).
+    const real = safeRealpath(full);
+    if (!real || !isInside(base, real)) continue;
+    let stat;
+    try {
+      stat = fs.statSync(full); // follows symlinks
+    } catch (_err) {
+      continue; // unreadable / broken link
+    }
+    if (stat.isDirectory()) {
+      out.push(...collectJsonlFiles(full, base));
+    } else if (stat.isFile() && entry.name.endsWith('.jsonl')) {
+      out.push({ path: full, mtimeMs: stat.mtimeMs });
     }
   }
   return out;
@@ -66,12 +88,21 @@ function collectJsonlFiles(root) {
 
 /**
  * Find the most-recently-modified .jsonl under the projects root, or an
- * explicit workspace subdirectory if one is given.
+ * explicit workspace subdirectory if one is given. Stays within the real
+ * projects root.
  */
-function findLatestJsonl({ projectsRoot, workspace } = {}) {
-  const root = resolveProjectsRoot(projectsRoot);
-  const searchRoot = workspace ? path.join(root, workspace) : root;
-  const files = collectJsonlFiles(searchRoot);
+function findLatestJsonl({ projectsRoot, workspace, realRoot } = {}) {
+  const root = path.resolve(resolveProjectsRoot(projectsRoot));
+  const realBase = realRoot || safeRealpath(root) || root;
+  let searchRoot = root;
+  if (workspace) {
+    const candidate = path.join(root, workspace);
+    if (!isInside(root, candidate)) return null;
+    const realCandidate = safeRealpath(candidate);
+    if (realCandidate && !isInside(realBase, realCandidate)) return null;
+    searchRoot = candidate;
+  }
+  const files = collectJsonlFiles(searchRoot, realBase);
   if (files.length === 0) return null;
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return files[0];
@@ -207,12 +238,25 @@ function getSessionMonitor(options = {}) {
   const dangerRatio = options.dangerRatio || DEFAULT_DANGER_RATIO;
 
   // Everything must stay inside the projects root: no `..` traversal, no
-  // arbitrary absolute paths. Reject before touching the filesystem.
-  const projectsRoot = resolveProjectsRoot(options.projectsRoot);
+  // arbitrary absolute paths, and no symlink that escapes after resolution.
+  // Reject before reading any file. We compare against the REAL root so a
+  // symlinked projects dir is handled consistently.
+  const projectsRoot = path.resolve(resolveProjectsRoot(options.projectsRoot));
+  const realRoot = safeRealpath(projectsRoot) || projectsRoot;
 
   if (options.workspace) {
     const candidate = path.join(projectsRoot, options.workspace);
+    // 1) lexical check on the resolved (but not yet realpath'd) path
     if (!isInside(projectsRoot, candidate)) {
+      return {
+        ok: false,
+        error: 'workspace escapes projects root',
+        workspace: options.workspace,
+      };
+    }
+    // 2) if it exists, its real target must still be inside the real root
+    const realCandidate = safeRealpath(candidate);
+    if (realCandidate && !isInside(realRoot, realCandidate)) {
       return {
         ok: false,
         error: 'workspace escapes projects root',
@@ -223,7 +267,23 @@ function getSessionMonitor(options = {}) {
 
   let target;
   if (options.jsonlPath) {
-    if (!isInside(projectsRoot, options.jsonlPath)) {
+    const resolvedJsonl = path.resolve(options.jsonlPath);
+    // 1) lexical containment of the resolved path
+    if (!isInside(projectsRoot, resolvedJsonl)) {
+      return {
+        ok: false,
+        error: 'jsonl path escapes projects root',
+      };
+    }
+    // 2) realpath: file must exist and its real target stay inside real root
+    const realJsonl = safeRealpath(resolvedJsonl);
+    if (!realJsonl) {
+      return {
+        ok: false,
+        error: `jsonl not found: ${options.jsonlPath}`,
+      };
+    }
+    if (!isInside(realRoot, realJsonl)) {
       return {
         ok: false,
         error: 'jsonl path escapes projects root',
@@ -231,18 +291,19 @@ function getSessionMonitor(options = {}) {
     }
     let mtimeMs = null;
     try {
-      mtimeMs = fs.statSync(options.jsonlPath).mtimeMs;
+      mtimeMs = fs.statSync(realJsonl).mtimeMs;
     } catch (_err) {
       return {
         ok: false,
         error: `jsonl not found: ${options.jsonlPath}`,
       };
     }
-    target = { path: options.jsonlPath, mtimeMs };
+    target = { path: realJsonl, mtimeMs };
   } else {
     target = findLatestJsonl({
       projectsRoot,
       workspace: options.workspace,
+      realRoot,
     });
   }
 
@@ -318,6 +379,7 @@ module.exports = {
   DEFAULT_WARNING_RATIO,
   DEFAULT_DANGER_RATIO,
   isInside,
+  safeRealpath,
   resolveProjectsRoot,
   collectJsonlFiles,
   findLatestJsonl,

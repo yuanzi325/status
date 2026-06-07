@@ -107,7 +107,10 @@ should not run unauthenticated on a public network.
 - **Path containment** — `?jsonl=` and `?workspace=` are resolved and must land
   **inside** the projects root (`SESSION_MONITOR_PROJECTS`, default
   `~/.claude/projects`). Absolute paths outside it and `../` traversal are
-  rejected with `{ "ok": false }` before any file is read.
+  rejected with `{ "ok": false }` before any file is read. Paths are also
+  checked **after `realpath` resolution** so a symlink inside the root that
+  points outside it cannot escape; the recursive scan likewise never follows
+  symlinks that leave the root.
 
 ## UI
 
