@@ -424,15 +424,8 @@ body {
 .handover-saved {
   margin-top: 12px;
   font-size: 11px;
-  line-height: 1.6;
-  letter-spacing: 0.06em;
-  color: var(--ink);
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+  color: var(--ink-60);
+  word-break: break-word;
 }
-
-.handover-saved .saved-tag {
-  font-weight: 800;
-  letter-spacing: 0.22em;
-}
-
-.handover-saved .saved-detail { color: var(--ink-40); }
-.handover-saved.is-error { color: var(--ink-60); }

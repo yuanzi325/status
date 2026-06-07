@@ -224,16 +224,13 @@ function renderSheet() {
     errEl.textContent = '';
   }
 
-  // SAVED block — success only
+  // SAVED block — success only, short line (meta already shows the details)
   if (saveState.saved) {
     const s = saveState.saved;
     saved.hidden = false;
     const md = s.saved.markdown_path.split('/').pop();
     const js = s.saved.json_path.split('/').pop();
-    saved.innerHTML =
-      `<span class="saved-tag">SAVED</span><br>` +
-      `<span class="saved-detail">${escapeHtml(md)} / ${escapeHtml(js)}</span><br>` +
-      `<span class="saved-detail">${metaHtml(s)}</span>`;
+    saved.textContent = `saved · ${md} / ${js}`;
   } else {
     saved.hidden = true;
     saved.textContent = '';
