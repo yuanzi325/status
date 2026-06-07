@@ -1,7 +1,8 @@
 'use strict';
 
 const fs = require('fs');
-const { resolveJsonlTarget, getSessionMonitor } = require('./parser');
+const path = require('path');
+const { resolveJsonlTarget, getSessionMonitor, isInside, safeRealpath } = require('./parser');
 
 /**
  * Manual handover preview.
@@ -302,10 +303,117 @@ async function generateHandoverPreview(options = {}) {
   return { ok: false, provider, error: `unknown provider: ${provider}` };
 }
 
+/**
+ * Atomically write `content` to `filePath`: write a sibling .tmp file, then
+ * rename it into place so readers never see a partial file.
+ */
+function atomicWrite(filePath, content) {
+  const tmp = `${filePath}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
+  fs.writeFileSync(tmp, content);
+  try {
+    fs.renameSync(tmp, filePath);
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch (_e) {
+      /* ignore cleanup failure */
+    }
+    throw err;
+  }
+}
+
+function buildMarkdownDoc(preview) {
+  const m = preview.monitor || {};
+  const s = preview.source || {};
+  const header = [
+    '# Session Handover',
+    '',
+    `- generated_at: ${preview.updated_at}`,
+    `- provider: ${preview.provider}`,
+    `- model: ${preview.model}`,
+    `- selected_turns: ${s.selected_turns}`,
+    `- total_chars: ${s.total_chars}`,
+    `- monitor.status: ${m.status}`,
+    `- monitor.window_load: ${m.window_load}`,
+    `- monitor.context_limit: ${m.context_limit}`,
+    '',
+    '---',
+    '',
+  ].join('\n');
+  return header + (preview.handover || '') + '\n';
+}
+
+/**
+ * Generate a handover preview and persist it to HANDOVER_OUT_DIR as
+ * latest.md + latest.json. Writes only inside HANDOVER_OUT_DIR; never into the
+ * Claude jsonl directory. Does not switch windows or touch hooks.
+ */
+async function saveHandoverPreview(options = {}) {
+  const preview = await generateHandoverPreview(options);
+  if (!preview.ok) return preview;
+
+  const outDir = process.env.HANDOVER_OUT_DIR;
+  if (!outDir) {
+    return { ok: false, provider: preview.provider, error: 'missing HANDOVER_OUT_DIR' };
+  }
+
+  const resolvedDir = path.resolve(outDir);
+  try {
+    fs.mkdirSync(resolvedDir, { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      provider: preview.provider,
+      error: `cannot create HANDOVER_OUT_DIR: ${err.message}`,
+    };
+  }
+
+  // Validate against the real directory and confirm both targets stay inside.
+  const realDir = safeRealpath(resolvedDir) || resolvedDir;
+  const markdownPath = path.join(realDir, 'latest.md');
+  const jsonPath = path.join(realDir, 'latest.json');
+  if (!isInside(realDir, markdownPath) || !isInside(realDir, jsonPath)) {
+    return { ok: false, provider: preview.provider, error: 'output path escapes HANDOVER_OUT_DIR' };
+  }
+
+  const record = {
+    ok: true,
+    provider: preview.provider,
+    model: preview.model,
+    source: preview.source,
+    monitor: preview.monitor,
+    updated_at: preview.updated_at,
+    handover: preview.handover,
+    consumed: false,
+  };
+
+  try {
+    atomicWrite(markdownPath, buildMarkdownDoc(preview));
+    atomicWrite(jsonPath, JSON.stringify(record, null, 2) + '\n');
+  } catch (err) {
+    return {
+      ok: false,
+      provider: preview.provider,
+      error: `failed to write handover: ${err.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    provider: preview.provider,
+    model: preview.model,
+    saved: { markdown_path: markdownPath, json_path: jsonPath },
+    source: preview.source,
+    monitor: preview.monitor,
+    updated_at: preview.updated_at,
+  };
+}
+
 module.exports = {
   extractMessageText,
   getRecentConversationTurns,
   buildHandoverPrompt,
   buildMockHandover,
   generateHandoverPreview,
+  saveHandoverPreview,
 };

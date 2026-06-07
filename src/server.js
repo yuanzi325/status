@@ -4,7 +4,7 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const { getSessionMonitor } = require('./parser');
-const { generateHandoverPreview } = require('./handover');
+const { generateHandoverPreview, saveHandoverPreview } = require('./handover');
 
 /**
  * Minimal bearer auth. If SESSION_MONITOR_TOKEN is set, requests must carry
@@ -68,6 +68,32 @@ function createApp() {
     let payload;
     try {
       payload = await generateHandoverPreview(options);
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+    res.status(payload.ok ? 200 : 400).json(payload);
+  });
+
+  // Save a handover preview to HANDOVER_OUT_DIR (latest.md + latest.json).
+  // Save only — no window switching, no hook changes. Reuses bearer auth.
+  app.post('/api/handover/save', express.json({ limit: '16kb' }), async (req, res) => {
+    if (!isAuthorized(req)) {
+      return res
+        .status(401)
+        .set('WWW-Authenticate', 'Bearer')
+        .json({ ok: false, error: 'unauthorized' });
+    }
+    const body = req.body || {};
+    const options = {
+      workspace: body.workspace || undefined,
+      jsonlPath: body.jsonl || undefined,
+      projectsRoot: process.env.SESSION_MONITOR_PROJECTS || undefined,
+      turns: body.turns ? Number(body.turns) : undefined,
+      provider: body.provider || undefined,
+    };
+    let payload;
+    try {
+      payload = await saveHandoverPreview(options);
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });
     }

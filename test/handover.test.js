@@ -9,6 +9,7 @@ const path = require('path');
 const {
   getRecentConversationTurns,
   generateHandoverPreview,
+  saveHandoverPreview,
 } = require('../src/handover');
 const { createApp } = require('../src/server');
 
@@ -122,6 +123,84 @@ test('zhipu provider without key returns a clear error', async () => {
   });
   assert.equal(out.ok, false);
   assert.match(out.error, /missing ZHIPU_API_KEY/);
+});
+
+test('save without HANDOVER_OUT_DIR returns a clear error', async () => {
+  delete process.env.HANDOVER_OUT_DIR;
+  const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /missing HANDOVER_OUT_DIR/);
+});
+
+test('mock save writes latest.md and latest.json with consumed=false', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.HANDOVER_OUT_DIR = outDir;
+  try {
+    const out = await saveHandoverPreview({ projectsRoot: root, jsonlPath: convo, provider: 'mock' });
+    assert.equal(out.ok, true);
+    assert.equal(out.saved.markdown_path, path.join(outDir, 'latest.md'));
+    assert.equal(out.saved.json_path, path.join(outDir, 'latest.json'));
+
+    const md = fs.readFileSync(path.join(outDir, 'latest.md'), 'utf8');
+    assert.match(md, /# Session Handover/);
+    assert.match(md, /provider: mock/);
+    assert.match(md, /selected_turns: 4/);
+
+    const json = JSON.parse(fs.readFileSync(path.join(outDir, 'latest.json'), 'utf8'));
+    assert.equal(json.ok, true);
+    assert.equal(json.consumed, false);
+    assert.equal(json.provider, 'mock');
+    assert.equal(json.source.selected_turns, 4);
+    assert.ok(typeof json.handover === 'string' && json.handover.length > 0);
+
+    // no leftover temp files; only the two finals
+    const left = fs.readdirSync(outDir).sort();
+    assert.deepEqual(left, ['latest.json', 'latest.md']);
+
+    // never leak tool content into either file
+    const blob = md + JSON.stringify(json);
+    assert.equal(blob.includes('TOOL_INPUT_LEAK_TOKEN'), false);
+    assert.equal(blob.includes('TOOL_RESULT_LEAK_TOKEN'), false);
+  } finally {
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/handover/save reuses bearer auth (401 without token)', async () => {
+  const outDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hout-')));
+  process.env.SESSION_MONITOR_TOKEN = 'sv-tok';
+  process.env.SESSION_MONITOR_PROJECTS = root;
+  process.env.HANDOVER_OUT_DIR = outDir;
+  const app = createApp();
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const noAuth = await fetch(`${base}/api/handover/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'mock' }),
+    });
+    assert.equal(noAuth.status, 401);
+
+    const ok = await fetch(`${base}/api/handover/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sv-tok' },
+      body: JSON.stringify({ provider: 'mock' }),
+    });
+    assert.equal(ok.status, 200);
+    const data = await ok.json();
+    assert.equal(data.ok, true);
+    assert.ok(data.saved.markdown_path.endsWith('latest.md'));
+    assert.ok(fs.existsSync(path.join(outDir, 'latest.json')));
+  } finally {
+    server.close();
+    delete process.env.SESSION_MONITOR_TOKEN;
+    delete process.env.SESSION_MONITOR_PROJECTS;
+    delete process.env.HANDOVER_OUT_DIR;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
 });
 
 test('POST /api/handover/preview reuses bearer auth (401 without token)', async () => {

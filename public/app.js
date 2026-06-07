@@ -4,6 +4,7 @@ const REFRESH_MS = 15000;
 let current = null;
 let activeBlock = 'summary';
 let handoverState = { loading: false, error: null, text: null, meta: null };
+let saveState = { loading: false, error: null, saved: null };
 
 /* ---- formatting helpers ---- */
 function compact(n) {
@@ -155,15 +156,38 @@ function renderPanel(d) {
 function renderHandover() {
   const zone = document.getElementById('handoverZone');
   const btn = document.getElementById('handoverBtn');
+  const saveBtn = document.getElementById('handoverSaveBtn');
   const meta = document.getElementById('handoverMeta');
+  const saved = document.getElementById('handoverSaved');
   const out = document.getElementById('handoverOut');
   if (activeBlock !== 'handover') {
     zone.hidden = true;
     return;
   }
   zone.hidden = false;
-  btn.disabled = handoverState.loading;
+  btn.disabled = handoverState.loading || saveState.loading;
   btn.textContent = handoverState.loading ? 'GENERATING…' : 'GENERATE HANDOVER';
+  saveBtn.disabled = handoverState.loading || saveState.loading;
+  saveBtn.textContent = saveState.loading ? 'SAVING…' : 'SAVE HANDOVER';
+
+  if (saveState.error) {
+    saved.hidden = false;
+    saved.classList.add('is-error');
+    saved.textContent = `save error · ${saveState.error}`;
+  } else if (saveState.saved) {
+    const s = saveState.saved;
+    saved.hidden = false;
+    saved.classList.remove('is-error');
+    const md = s.saved.markdown_path.split('/').pop();
+    const js = s.saved.json_path.split('/').pop();
+    saved.innerHTML =
+      `<span class="saved-tag">SAVED</span><br>` +
+      `<span class="saved-detail">${md} / ${js}</span><br>` +
+      `<span class="saved-detail">${s.provider} · ${s.model} · ${s.source.selected_turns} turns / ${s.source.total_chars} chars</span>`;
+  } else {
+    saved.hidden = true;
+    saved.textContent = '';
+  }
 
   if (handoverState.meta) {
     const m = handoverState.meta;
@@ -215,7 +239,30 @@ async function runHandover() {
   renderHandover();
 }
 
+async function runHandoverSave() {
+  if (saveState.loading || handoverState.loading) return;
+  saveState = { loading: true, error: null, saved: null };
+  renderHandover();
+  try {
+    const res = await fetch('/api/handover/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      saveState = { loading: false, error: null, saved: data };
+    } else {
+      saveState = { loading: false, error: (data && data.error) || 'failed', saved: null };
+    }
+  } catch (_err) {
+    saveState = { loading: false, error: 'request failed', saved: null };
+  }
+  renderHandover();
+}
+
 document.getElementById('handoverBtn').addEventListener('click', runHandover);
+document.getElementById('handoverSaveBtn').addEventListener('click', runHandoverSave);
 
 function setRows(container, pairs) {
   container.innerHTML = '';

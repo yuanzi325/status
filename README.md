@@ -156,9 +156,60 @@ It reuses the same bearer auth as the monitor (`401` without a valid token when
 | `HANDOVER_MAX_TURNS`       | `20`        | recent turns to read                     |
 | `HANDOVER_MAX_INPUT_CHARS` | `12000`     | total input character budget             |
 | `HANDOVER_MAX_MSG_CHARS`   | `1500`      | per-message character cap                |
+| `HANDOVER_OUT_DIR`         | —           | directory the save endpoint writes to    |
 
 The model id is **env-configurable, not hardcoded**. `glm-4.5-air` is only a
 default — confirm the actual model name in the Zhipu BigModel console.
+
+## Handover save
+
+`POST /api/handover/save` generates a preview (same options/providers as
+`/preview`) and persists it to `HANDOVER_OUT_DIR` for a later SessionStart hook
+to pick up. **Save only** — it writes two files and nothing else: it does not
+switch/restart any window, does not change hooks, does not write memory, and
+never writes into the Claude jsonl directory.
+
+- If `HANDOVER_OUT_DIR` is unset, it returns `400` with
+  `{ "ok": false, "error": "missing HANDOVER_OUT_DIR" }`.
+- Files are written **atomically** (`.tmp` then `rename`) so a reader never
+  sees a half-written file:
+  - `latest.md` — a header (generated_at, provider, model, selected_turns,
+    total_chars, monitor status/window_load/context_limit) followed by the
+    handover Markdown body.
+  - `latest.json` — `{ ok, provider, model, source, monitor, updated_at,
+    handover, consumed: false }`. The `consumed` flag is for a future hook to
+    flip after reading.
+- Writes stay inside the resolved `HANDOVER_OUT_DIR`; the filenames are fixed.
+- Reuses the same bearer auth as the rest of the API.
+
+```json
+{
+  "ok": true,
+  "provider": "mock",
+  "model": "mock",
+  "saved": {
+    "markdown_path": "/data/session-handover/latest.md",
+    "json_path": "/data/session-handover/latest.json"
+  },
+  "source": { "jsonl_path": "...", "workspace": null, "selected_turns": 4, "total_chars": 63 },
+  "monitor": { "status": "CLEAR", "window_load": 84147, "context_limit": 200000 },
+  "updated_at": "2026-06-07T00:00:00.000Z"
+}
+```
+
+### Mounting the output directory (Cool volume example)
+
+Persist the handover dir on the host so a hook outside the container can read it:
+
+```text
+Host Path:        /home/ubuntu/.claude/session-handover
+Destination Path: /data/session-handover
+HANDOVER_OUT_DIR=/data/session-handover
+```
+
+The save step only writes `latest.md` / `latest.json`. Reading them back into a
+new session (the SessionStart hook) and any window switching are **out of scope
+here** and are not performed by this service.
 
 ## Security boundary
 
