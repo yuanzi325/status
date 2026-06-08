@@ -66,7 +66,14 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 26px;
+  margin-bottom: 18px;
+}
+
+/* hairline between the masthead and the status lines (full grid width) */
+.masthead-rule {
+  border: none;
+  border-top: 1px solid var(--ink-25);
+  margin: 0 0 14px;
 }
 
 .brand h1 {
@@ -117,7 +124,7 @@ body {
 }
 
 .readline {
-  margin: -12px 0 0;
+  margin: 0 0 0;
 }
 
 .usageline {
