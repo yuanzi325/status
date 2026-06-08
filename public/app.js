@@ -154,7 +154,7 @@ const BLOCKS = {
   handover(d) {
     const c = compact(d.handover.tokens_left_to_full);
     return {
-      value: `${c.num}<span class="unit">${c.unit.toUpperCase()}</span>`,
+      value: `${c.num}<span class="unit">${c.unit}</span>`,
       title: 'HANDOVER',
       rows: [
         ['to warning', commas(d.handover.tokens_left_to_warning)],
@@ -196,7 +196,7 @@ function renderPanel(d) {
       ['context used', `${pct(d.load)}%`],
       ['last turn', signed(d.usage.pulse_tokens)],
       ['cache read', `${pct(d.usage.cache_read_ratio)}%`],
-      ['handover', `${compact(d.handover.tokens_left_to_full).num}${compact(d.handover.tokens_left_to_full).unit.toUpperCase()} left`],
+      ['handover', `${compact(d.handover.tokens_left_to_full).num}${compact(d.handover.tokens_left_to_full).unit} left`],
     ]);
   } else {
     const def = BLOCKS[activeBlock](d);

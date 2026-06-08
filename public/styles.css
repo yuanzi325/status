@@ -107,22 +107,21 @@ body {
 }
 
 /* ---- read / event + usage status lines ---- */
-.readline {
-  margin: -12px 0 4px;
+.readline,
+.usageline {
   font-size: 10.5px;
-  line-height: 1.4;
+  line-height: 1.6;
   letter-spacing: 0.08em;
   color: var(--ink-40);
   text-transform: lowercase;
 }
 
+.readline {
+  margin: -12px 0 4px;
+}
+
 .usageline {
   margin: 0 0 14px;
-  font-size: 10.5px;
-  line-height: 1.5;
-  letter-spacing: 0.08em;
-  color: var(--ink-40);
-  text-transform: lowercase;
 }
 
 /* ---- 2 x 3 grid with thin black lines ---- */
@@ -173,7 +172,8 @@ body {
 }
 
 .cell-value .unit {
-  font-size: 20px;
+  margin-left: 0.08em;
+  font-size: 0.58em;
   font-weight: 700;
   letter-spacing: 0;
 }
