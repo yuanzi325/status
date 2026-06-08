@@ -80,8 +80,7 @@ function renderUsageline(d) {
   const seven = u.seven_day || {};
   const l1 = `usage 5h: ${pctOrDash(five.used_percentage)} · reset ${hhmm(five.resets_at)}`;
   const l2 = `weekly 7d: ${pctOrDash(seven.used_percentage)} · reset ${mmddhhmm(seven.resets_at)}`;
-  const l3 = `updated ${hhmm(u.updated_at)}`;
-  el.innerHTML = `${escapeHtml(l1)}<br>${escapeHtml(l2)}<br>${escapeHtml(l3)}`;
+  el.innerHTML = `${escapeHtml(l1)}<br>${escapeHtml(l2)}`;
 }
 
 /* ---- block definitions: map data -> display ---- */
