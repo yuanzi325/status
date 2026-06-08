@@ -48,6 +48,42 @@ function renderReadline(d) {
   el.textContent = `read ${read} CST · event ${event} CST`;
 }
 
+// ISO -> Asia/Shanghai MM-DD HH:mm, or "—" when missing/invalid
+function mmddhhmm(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).formatToParts(d);
+  const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
+  return `${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+}
+
+function pctOrDash(n) {
+  return typeof n === 'number' && isFinite(n) ? `${n}%` : '—';
+}
+
+function renderUsageline(d) {
+  const el = document.getElementById('usageline');
+  const u = d.claude_usage;
+  if (!u) {
+    el.textContent = 'usage — · weekly —';
+    return;
+  }
+  const five = u.five_hour || {};
+  const seven = u.seven_day || {};
+  const l1 = `usage 5h: ${pctOrDash(five.used_percentage)} · reset ${hhmm(five.resets_at)}`;
+  const l2 = `weekly 7d: ${pctOrDash(seven.used_percentage)} · reset ${mmddhhmm(seven.resets_at)}`;
+  const l3 = `updated ${hhmm(u.updated_at)}`;
+  el.innerHTML = `${escapeHtml(l1)}<br>${escapeHtml(l2)}<br>${escapeHtml(l3)}`;
+}
+
 /* ---- block definitions: map data -> display ---- */
 const BLOCKS = {
   window(d) {
@@ -376,6 +412,7 @@ function renderError(payload) {
     el.classList.remove('is-word');
   });
   document.getElementById('readline').textContent = 'read — · event —';
+  document.getElementById('usageline').textContent = 'usage — · weekly —';
   document.getElementById('handoverZone').hidden = true;
   closeSheet();
 }
@@ -388,6 +425,7 @@ function render() {
   const mark = document.getElementById('statusMark');
   mark.dataset.status = current.status;
   renderReadline(current);
+  renderUsageline(current);
   renderCells(current);
   renderPanel(current);
 }

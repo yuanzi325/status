@@ -95,6 +95,64 @@ load >= 0.75           -> HANDOVER
 So `warning_threshold = 0.60 * context_limit` and
 `danger_threshold = 0.75 * context_limit` (120k / 150k at the default 200k).
 
+## Claude usage snapshot
+
+If `CLAUDE_USAGE_PATH` points at the local Claude usage snapshot (an
+**overwrite** file the statusline wrapper rewrites — not a log; the dashboard
+only reads it, never appends or cleans it), `getSessionMonitor()` adds a
+`claude_usage` object to its payload:
+
+```json
+"claude_usage": {
+  "updated_at": "…",
+  "five_hour": { "used_percentage": 13, "resets_at": "…" },
+  "seven_day": { "used_percentage": 35, "resets_at": "…" }
+}
+```
+
+Only those whitelisted fields are read — never tokens, account, email, or any
+other field in the file. It is `null` (and the UI shows `usage — · weekly —`)
+when the path is unset, the file is missing, the JSON is invalid, required
+fields are absent, or the snapshot is **stale**. Staleness defaults to 6h and
+is configurable via `CLAUDE_USAGE_MAX_AGE_MS` (`0` disables the check). The UI
+shows it under the read/event line:
+
+```text
+usage 5h: 13% · reset 14:30
+weekly 7d: 35% · reset 06-12 09:00
+updated 15:09
+```
+
+| var                       | default | meaning                                   |
+| ------------------------- | ------- | ----------------------------------------- |
+| `CLAUDE_USAGE_PATH`       | —       | path to `claude_usage.json` (unset = off) |
+| `CLAUDE_USAGE_MAX_AGE_MS` | `21600000` | snapshot freshness window (0 = no check) |
+
+### Mounting the snapshot (Coolify)
+
+The snapshot lives on the host; mount its directory **read-only** into the
+`status` container and point `CLAUDE_USAGE_PATH` at it. Recommended (clean
+container path):
+
+```text
+Host Path:        /home/ubuntu/.claude/usage
+Destination Path: /app/claude-usage
+Mode:             read-only
+CLAUDE_USAGE_PATH=/app/claude-usage/claude_usage.json
+```
+
+Or mount at the same path as the host if you prefer:
+
+```text
+Host Path:        /home/ubuntu/.claude/usage
+Destination Path: /home/ubuntu/.claude/usage
+Mode:             read-only
+CLAUDE_USAGE_PATH=/home/ubuntu/.claude/usage/claude_usage.json
+```
+
+The volume mount is Coolify configuration (not in this repo); the code only
+reads whatever `CLAUDE_USAGE_PATH` resolves to.
+
 ## Handover preview
 
 `POST /api/handover/preview` drafts a handover for the current window.

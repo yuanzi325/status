@@ -15,6 +15,71 @@ const os = require('os');
 const DEFAULT_CONTEXT_LIMIT = 200000;
 const DEFAULT_WARNING_RATIO = 0.6; // token pressure starts to matter
 const DEFAULT_DANGER_RATIO = 0.75; // time to hand over
+const DEFAULT_USAGE_MAX_AGE_MS = 6 * 60 * 60 * 1000; // snapshot considered stale after 6h
+
+/**
+ * How long a Claude usage snapshot stays "fresh". Configurable via
+ * CLAUDE_USAGE_MAX_AGE_MS; set to 0 to disable the staleness check.
+ */
+function usageMaxAgeMs() {
+  const env = process.env.CLAUDE_USAGE_MAX_AGE_MS;
+  if (env === undefined) return DEFAULT_USAGE_MAX_AGE_MS;
+  const n = Number(env);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : DEFAULT_USAGE_MAX_AGE_MS;
+}
+
+/**
+ * Read the local Claude usage snapshot (an overwrite file, not a log) and
+ * return ONLY the whitelisted fields. Returns null — never throws — if the
+ * path is unset, the file is missing/invalid, required fields are absent, or
+ * the snapshot is stale. Never echoes any other field (no tokens, account,
+ * email, env).
+ */
+function readClaudeUsage(options = {}) {
+  const p = options.path || process.env.CLAUDE_USAGE_PATH;
+  if (!p) return null;
+
+  let raw;
+  try {
+    raw = fs.readFileSync(p, 'utf8');
+  } catch (_err) {
+    return null;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (_err) {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+
+  const numOrNull = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const str = (v) => (typeof v === 'string' ? v : null);
+
+  const five = data.five_hour;
+  const seven = data.seven_day;
+  if (typeof data.updated_at !== 'string') return null;
+  if (!five || typeof five !== 'object' || !seven || typeof seven !== 'object') return null;
+
+  const fivePct = numOrNull(five.used_percentage);
+  const sevenPct = numOrNull(seven.used_percentage);
+  if (fivePct === null || sevenPct === null) return null;
+
+  const maxAge = usageMaxAgeMs();
+  if (maxAge > 0) {
+    const ts = Date.parse(data.updated_at);
+    if (!Number.isFinite(ts) || Date.now() - ts > maxAge) return null;
+  }
+
+  return {
+    updated_at: data.updated_at,
+    five_hour: { used_percentage: fivePct, resets_at: str(five.resets_at) },
+    seven_day: { used_percentage: sevenPct, resets_at: str(seven.resets_at) },
+  };
+}
 
 /**
  * True if `child` resolves to `parent` itself or somewhere inside it.
@@ -329,6 +394,7 @@ function getSessionMonitor(options = {}) {
     read_at: new Date().toISOString(),
     event_at: eventAt,
     updated_at: eventAt, // back-compat alias for older frontends
+    claude_usage: readClaudeUsage(),
     usage: {
       input_tokens: usage.input_tokens,
       output_tokens: usage.output_tokens,
@@ -367,5 +433,6 @@ module.exports = {
   readUsageFromFile,
   computeUsage,
   resolveJsonlTarget,
+  readClaudeUsage,
   getSessionMonitor,
 };
