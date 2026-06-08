@@ -91,6 +91,15 @@ test('getSessionMonitor builds full payload from message.usage', () => {
   assert.equal(JSON.stringify(out).includes('redacted'), false);
 });
 
+test('getSessionMonitor reports read_at / event_at and aliases updated_at', () => {
+  const out = mon({ jsonlPath: f('message-usage.jsonl') });
+  assert.equal(typeof out.read_at, 'string');
+  assert.equal(typeof out.event_at, 'string');
+  assert.equal(out.updated_at, out.event_at);
+  // event_at comes from the last record's timestamp
+  assert.equal(out.event_at, '2026-06-07T00:01:00.000Z');
+});
+
 test('getSessionMonitor returns clear error when no usage present', () => {
   const out = mon({ jsonlPath: f('no-usage.jsonl') });
   assert.equal(out.ok, false);

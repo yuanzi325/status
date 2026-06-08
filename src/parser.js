@@ -316,6 +316,8 @@ function getSessionMonitor(options = {}) {
   const warningThreshold = Math.round(contextLimit * warningRatio);
   const dangerThreshold = Math.round(contextLimit * dangerRatio);
 
+  const eventAt = parsed.last.timestamp || new Date(target.mtimeMs).toISOString();
+
   return {
     ok: true,
     workspace: options.workspace || null,
@@ -324,7 +326,9 @@ function getSessionMonitor(options = {}) {
     context_limit: contextLimit,
     status,
     load,
-    updated_at: parsed.last.timestamp || new Date(target.mtimeMs).toISOString(),
+    read_at: new Date().toISOString(),
+    event_at: eventAt,
+    updated_at: eventAt, // back-compat alias for older frontends
     usage: {
       input_tokens: usage.input_tokens,
       output_tokens: usage.output_tokens,

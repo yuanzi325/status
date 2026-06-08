@@ -106,6 +106,16 @@ body {
   box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.12);
 }
 
+/* ---- read / event timestamp line ---- */
+.readline {
+  margin: -12px 0 14px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: var(--ink-40);
+  text-transform: lowercase;
+}
+
 /* ---- 2 x 3 grid with thin black lines ---- */
 .grid {
   display: grid;

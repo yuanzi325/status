@@ -28,6 +28,26 @@ function signed(n) {
   return (n >= 0 ? '+' : '') + commas(n);
 }
 
+// ISO -> Asia/Shanghai HH:mm, or "—" when missing/invalid
+function hhmm(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).format(d);
+}
+
+function renderReadline(d) {
+  const el = document.getElementById('readline');
+  const read = hhmm(d.read_at);
+  const event = hhmm(d.event_at || d.updated_at);
+  el.textContent = `read ${read} CST · event ${event} CST`;
+}
+
 /* ---- block definitions: map data -> display ---- */
 const BLOCKS = {
   window(d) {
@@ -355,6 +375,7 @@ function renderError(payload) {
     el.textContent = '—';
     el.classList.remove('is-word');
   });
+  document.getElementById('readline').textContent = 'read — · event —';
   document.getElementById('handoverZone').hidden = true;
   closeSheet();
 }
@@ -366,6 +387,7 @@ function render() {
   }
   const mark = document.getElementById('statusMark');
   mark.dataset.status = current.status;
+  renderReadline(current);
   renderCells(current);
   renderPanel(current);
 }
