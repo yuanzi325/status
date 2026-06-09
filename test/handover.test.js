@@ -101,9 +101,9 @@ test('total input chars budget trims oldest turns', () => {
   assert.ok(r.source.total_chars <= 30 || r.source.selected_turns === 1);
 });
 
-test('default context budgets are 40 / 20000 / 1800', () => {
-  assert.equal(DEFAULT_MAX_TURNS, 40);
-  assert.equal(DEFAULT_MAX_INPUT_CHARS, 20000);
+test('default context budgets are 30 / 12000 / 1800', () => {
+  assert.equal(DEFAULT_MAX_TURNS, 30);
+  assert.equal(DEFAULT_MAX_INPUT_CHARS, 12000);
   assert.equal(DEFAULT_MAX_MSG_CHARS, 1800);
 });
 

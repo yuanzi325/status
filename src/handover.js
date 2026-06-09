@@ -14,10 +14,10 @@ const { resolveJsonlTarget, getSessionMonitor, isInside, safeRealpath } = requir
  * memory, or touch any window.
  */
 
-const DEFAULT_MAX_TURNS = intFromEnv('HANDOVER_MAX_TURNS', 40);
-const DEFAULT_MAX_INPUT_CHARS = intFromEnv('HANDOVER_MAX_INPUT_CHARS', 20000);
+const DEFAULT_MAX_TURNS = intFromEnv('HANDOVER_MAX_TURNS', 30);
+const DEFAULT_MAX_INPUT_CHARS = intFromEnv('HANDOVER_MAX_INPUT_CHARS', 12000);
 const DEFAULT_MAX_MSG_CHARS = intFromEnv('HANDOVER_MAX_MSG_CHARS', 1800);
-const ZHIPU_TIMEOUT_MS = intFromEnv('HANDOVER_ZHIPU_TIMEOUT_MS', 30000);
+const ZHIPU_TIMEOUT_MS = intFromEnv('HANDOVER_ZHIPU_TIMEOUT_MS', 90000);
 
 function intFromEnv(name, fallback) {
   const n = Number(process.env[name]);
